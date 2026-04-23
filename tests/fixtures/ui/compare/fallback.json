@@ -1,0 +1,52 @@
+{
+  "chunk_duration_s": 1.0,
+  "chunk_index": 3,
+  "drop_count": 0,
+  "error_message": "worker timeout triggered fallback stem path",
+  "error_stage": "infer",
+  "fallback_applied": true,
+  "health_reason": "fallback stem path used after worker timeout",
+  "health_state": "fallback",
+  "infer_ms": 0.0,
+  "input": "fixtures/audio/retry_mix.mp3",
+  "istft_ms": 10.44,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": true,
+    "clock_source": "perf_counter",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "fallback",
+    "sample_width_bytes": 2,
+    "samples_processed": 48000,
+    "stage_timings": {
+      "stft": 9.12
+    },
+    "stages": [
+      "stft"
+    ]
+  },
+  "model_path": "artifacts/models/fallback.pt",
+  "queue_depth": 0,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 48000,
+  "source": {
+    "kind": "mp3",
+    "metadata": {
+      "container": "audio/mpeg",
+      "fallback_origin": "worker timeout recovery",
+      "source_label": "native audio source"
+    },
+    "reference": "fixtures/audio/retry_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/fallback/bass.wav",
+    "drums": "artifacts/live/fallback/drums.wav",
+    "other": "artifacts/live/fallback/other.wav",
+    "vocals": "artifacts/live/fallback/vocals.wav"
+  },
+  "stft_ms": 9.12,
+  "timestamp": "2026-04-20T08:18:41Z",
+  "total_ms": 19.56
+}

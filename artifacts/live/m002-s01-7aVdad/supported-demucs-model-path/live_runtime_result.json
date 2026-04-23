@@ -1,0 +1,46 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "runtime operating normally",
+  "health_state": "healthy",
+  "infer_ms": 0.00079,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 0.00011,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/demucs-live.pt",
+  "queue_depth": 20,
+  "requested_model_path": "artifacts/models/demucs-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/m002-s01-7aVdad/supported-demucs-model-path/bass.wav",
+    "drums": "artifacts/live/m002-s01-7aVdad/supported-demucs-model-path/drums.wav",
+    "other": "artifacts/live/m002-s01-7aVdad/supported-demucs-model-path/other.wav",
+    "vocals": "artifacts/live/m002-s01-7aVdad/supported-demucs-model-path/vocals.wav"
+  },
+  "stft_ms": 25.359612,
+  "timestamp": "2026-04-20T23:51:09.287377+00:00",
+  "total_ms": 25.360512
+}

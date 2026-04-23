@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75.0.0", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio-source-separation-eval"
+version = "0.1.0"
+description = "Reproducible evaluation and benchmarking harness for UMX proof workflows."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "PyYAML==6.0.2",
+  "jsonschema==4.23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.5",
+  "pytest-cov==6.0.0",
+  "playwright==1.54.0",
+]
+mic = [
+  "sounddevice==0.5.1",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]

@@ -1,0 +1,44 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 17,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "backpressure degraded after 3 queued chunks; dropped 17 additional chunks",
+  "health_state": "degraded",
+  "infer_ms": 0.000707,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 0.000104,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 3,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "instrumental": "artifacts/live/s04-verify-PBZcPj/degraded-overload/instrumental.wav",
+    "vocals": "artifacts/live/s04-verify-PBZcPj/degraded-overload/vocals.wav"
+  },
+  "stft_ms": 21.403524,
+  "timestamp": "2026-04-20T18:05:18.639933+00:00",
+  "total_ms": 21.404335
+}

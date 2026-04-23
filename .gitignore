@@ -28,3 +28,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+.claude/
+claude-progress.txt
+init.sh

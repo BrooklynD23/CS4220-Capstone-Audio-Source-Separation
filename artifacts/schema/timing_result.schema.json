@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cs4220-capstone.local/schema/timing_result.schema.json",
+  "title": "TimingResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "input",
+    "sample_rate_hz",
+    "chunk_duration_s",
+    "stft_ms",
+    "infer_ms",
+    "istft_ms",
+    "total_ms",
+    "status",
+    "error_stage",
+    "error_message",
+    "timestamp",
+    "metadata"
+  ],
+  "properties": {
+    "input": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sample_rate_hz": {
+      "type": "integer",
+      "minimum": 8000,
+      "maximum": 48000
+    },
+    "chunk_duration_s": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 30.0
+    },
+    "stft_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "infer_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "istft_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "total_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "error_stage": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error_message": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_requested",
+        "device_used",
+        "mode",
+        "clock_source",
+        "clock_fallback",
+        "samples_processed",
+        "channels",
+        "sample_width_bytes",
+        "stages"
+      ],
+      "properties": {
+        "device_requested": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "device_used": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["smoke", "full"]
+        },
+        "clock_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clock_fallback": {
+          "type": "boolean"
+        },
+        "samples_processed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "sample_width_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["stft", "infer", "istft"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": true,
+  "health_reason": "requested model path artifacts/models/unsupported-live.pt fell back to artifacts/models/umx-live.pt",
+  "health_state": "fallback",
+  "infer_ms": 0.00055,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 0.00013,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 20,
+  "requested_model_path": "artifacts/models/unsupported-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/m002-s01-p3VEOQ/unsupported-demucs-fallback-path/bass.wav",
+    "drums": "artifacts/live/m002-s01-p3VEOQ/unsupported-demucs-fallback-path/drums.wav",
+    "other": "artifacts/live/m002-s01-p3VEOQ/unsupported-demucs-fallback-path/other.wav",
+    "vocals": "artifacts/live/m002-s01-p3VEOQ/unsupported-demucs-fallback-path/vocals.wav"
+  },
+  "stft_ms": 20.500266,
+  "timestamp": "2026-04-20T23:53:50.626989+00:00",
+  "total_ms": 20.500946
+}

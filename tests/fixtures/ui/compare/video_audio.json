@@ -1,0 +1,60 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 8,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "video track ignored; audio extracted first",
+  "health_state": "healthy",
+  "infer_ms": 77.25,
+  "input": "fixtures/video/performance_cut.mp4",
+  "istft_ms": 10.03,
+  "metadata": {
+    "channels": 2,
+    "clock_fallback": false,
+    "clock_source": "perf_counter",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "video-audio",
+    "sample_width_bytes": 2,
+    "samples_processed": 44100,
+    "stage_timings": {
+      "decode": 7.8,
+      "demux": 4.2,
+      "infer": 77.25,
+      "istft": 10.03,
+      "stft": 11.08
+    },
+    "stages": [
+      "demux",
+      "decode",
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 0,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 44100,
+  "source": {
+    "kind": "video-audio",
+    "metadata": {
+      "container": "video/mp4",
+      "source_label": "audio-first extraction from video source",
+      "video_reference": "fixtures/video/performance_cut.mp4"
+    },
+    "reference": "fixtures/video/performance_cut.mp4#audio"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/video-audio/bass.wav",
+    "drums": "artifacts/live/video-audio/drums.wav",
+    "other": "artifacts/live/video-audio/other.wav",
+    "vocals": "artifacts/live/video-audio/vocals.wav"
+  },
+  "stft_ms": 11.08,
+  "timestamp": "2026-04-20T08:19:57Z",
+  "total_ms": 98.36
+}

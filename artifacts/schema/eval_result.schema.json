@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cs4220-capstone.local/schema/eval_result.schema.json",
+  "title": "EvalResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "dataset",
+    "track_count",
+    "vocal_sdr_median_db",
+    "threshold_db",
+    "pass",
+    "passes_threshold",
+    "status",
+    "error_stage",
+    "generated_at"
+  ],
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset": {
+      "type": "string",
+      "minLength": 1
+    },
+    "track_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "vocal_sdr_median_db": {
+      "type": "number"
+    },
+    "threshold_db": {
+      "type": "number"
+    },
+    "pass": {
+      "type": "boolean"
+    },
+    "passes_threshold": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "error_stage": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string"
+    },
+    "timing_ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "load_ms": { "type": "number", "minimum": 0 },
+        "separate_ms": { "type": "number", "minimum": 0 },
+        "aggregate_ms": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

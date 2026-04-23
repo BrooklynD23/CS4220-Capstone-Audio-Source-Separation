@@ -1,0 +1,58 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 27,
+  "drop_count": 1,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "gpu queue saturated and dropped one late chunk",
+  "health_state": "degraded",
+  "infer_ms": 126.3,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 12.8,
+  "metadata": {
+    "channels": 2,
+    "clock_fallback": false,
+    "clock_source": "perf_counter",
+    "device_requested": "gpu",
+    "device_used": "gpu",
+    "mode": "degraded",
+    "sample_width_bytes": 2,
+    "samples_processed": 88200,
+    "stage_timings": {
+      "infer": 126.3,
+      "istft": 12.8,
+      "postprocess": 6.4,
+      "stft": 15.45
+    },
+    "stages": [
+      "stft",
+      "infer",
+      "istft",
+      "postprocess"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 4,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 44100,
+  "source": {
+    "kind": "mp3",
+    "metadata": {
+      "container": "audio/mpeg",
+      "runtime_note": "queue recovered after transient slowdown",
+      "source_label": "native audio source"
+    },
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/degraded/bass.wav",
+    "drums": "artifacts/live/degraded/drums.wav",
+    "other": "artifacts/live/degraded/other.wav",
+    "vocals": "artifacts/live/degraded/vocals.wav"
+  },
+  "stft_ms": 15.45,
+  "timestamp": "2026-04-20T08:17:03Z",
+  "total_ms": 154.55
+}

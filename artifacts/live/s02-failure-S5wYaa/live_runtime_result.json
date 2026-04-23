@@ -1,0 +1,36 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 0,
+  "drop_count": 0,
+  "error_message": "Input audio file not found: fixtures/audio/missing.mp3",
+  "error_stage": "decode_failed",
+  "infer_ms": 0.0,
+  "input": "fixtures/audio/missing.mp3",
+  "istft_ms": 0.0,
+  "metadata": {
+    "channels": 0,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 0,
+    "samples_processed": 0,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 0,
+  "sample_rate_hz": 22050,
+  "status": "error",
+  "stem_paths": {
+    "instrumental": "artifacts/live/s02-failure-S5wYaa/instrumental.wav",
+    "vocals": "artifacts/live/s02-failure-S5wYaa/vocals.wav"
+  },
+  "stft_ms": 0.0,
+  "timestamp": "2026-04-20T15:39:47.105190+00:00",
+  "total_ms": 0.0
+}

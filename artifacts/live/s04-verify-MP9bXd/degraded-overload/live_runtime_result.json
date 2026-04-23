@@ -1,0 +1,46 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 17,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "backpressure degraded after 3 queued chunks; dropped 17 additional chunks",
+  "health_state": "degraded",
+  "infer_ms": 0.00056,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 9e-05,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 3,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/live/s04-verify-MP9bXd/degraded-overload/bass.wav",
+    "drums": "artifacts/live/s04-verify-MP9bXd/degraded-overload/drums.wav",
+    "other": "artifacts/live/s04-verify-MP9bXd/degraded-overload/other.wav",
+    "vocals": "artifacts/live/s04-verify-MP9bXd/degraded-overload/vocals.wav"
+  },
+  "stft_ms": 23.628929,
+  "timestamp": "2026-04-20T22:29:23.337632+00:00",
+  "total_ms": 23.629579
+}

@@ -1,0 +1,44 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "runtime operating normally",
+  "health_state": "healthy",
+  "infer_ms": 0.000644,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 0.000187,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 20,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "instrumental": "artifacts/bench/s06-capstone-LSvLtu/live/instrumental.wav",
+    "vocals": "artifacts/bench/s06-capstone-LSvLtu/live/vocals.wav"
+  },
+  "stft_ms": 25.645943,
+  "timestamp": "2026-04-20T18:06:05.850715+00:00",
+  "total_ms": 25.646774
+}

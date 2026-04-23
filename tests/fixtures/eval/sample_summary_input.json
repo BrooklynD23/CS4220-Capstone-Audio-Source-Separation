@@ -1,0 +1,31 @@
+{
+  "protocol_version": "1.0",
+  "dataset": "musdb18",
+  "threshold_db": 5.0,
+  "track_results": [
+    {
+      "track_name": "track_c",
+      "targets": {
+        "vocals": {
+          "sdr": 5.0
+        }
+      }
+    },
+    {
+      "track_name": "track_a",
+      "targets": {
+        "vocals": {
+          "sdr": 6.0
+        }
+      }
+    },
+    {
+      "track_name": "track_b",
+      "targets": {
+        "vocals": {
+          "sdr": 4.0
+        }
+      }
+    }
+  ]
+}

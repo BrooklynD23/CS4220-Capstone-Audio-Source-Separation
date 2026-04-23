@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compare Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Live runtime compare shell</p>
+        <h1>Persisted artifact compare</h1>
+        <p class="lede">
+          Load a single <code>live_runtime_result.json</code> artifact from disk and inspect source,
+          health, timing, stems, and provenance without reconstructing state from logs.
+        </p>
+      </header>
+
+      <section class="controls card" aria-labelledby="controls-heading">
+        <div class="section-heading">
+          <h2 id="controls-heading">Artifact loader</h2>
+          <p>Choose a JSON artifact and load it into the compare shell.</p>
+        </div>
+
+        <div class="control-row">
+          <label class="file-picker" for="artifact-file">
+            <span class="file-picker-label">Artifact file</span>
+            <input id="artifact-file" name="artifact-file" type="file" accept="application/json,.json" />
+          </label>
+
+          <button id="load-button" type="button" class="primary-button">Load artifact</button>
+        </div>
+
+        <p id="file-hint" class="hint">Expected shape: persisted live runtime JSON from the separation run.</p>
+        <p id="selected-file" class="selected-file" data-testid="selected-file">No file selected</p>
+      </section>
+
+      <section id="banner-region" aria-live="polite" aria-atomic="true">
+        <div id="error-banner" class="banner banner-error is-hidden" role="alert" data-testid="error-banner"></div>
+        <div id="status-banner" class="banner banner-status" role="status" data-testid="status-banner">
+          Awaiting a loaded artifact.
+        </div>
+      </section>
+
+      <section class="card compare-toolbar" aria-labelledby="compare-heading">
+        <div class="section-heading">
+          <h2 id="compare-heading">Compare modes</h2>
+          <p>Switch how the same loaded artifact is arranged without mutating the artifact itself.</p>
+        </div>
+
+        <div class="compare-toolbar-grid">
+          <div class="mode-switcher" role="tablist" aria-label="Compare modes">
+            <button id="mode-side-by-side" class="mode-button is-active" type="button" data-mode="side-by-side" aria-pressed="true" aria-selected="true" data-testid="mode-button-side-by-side">
+              Side-by-side
+            </button>
+            <button id="mode-overlay" class="mode-button" type="button" data-mode="overlay" aria-pressed="false" aria-selected="false" data-testid="mode-button-overlay">
+              Overlay
+            </button>
+            <button id="mode-timeline" class="mode-button" type="button" data-mode="timeline" aria-pressed="false" aria-selected="false" data-testid="mode-button-timeline">
+              Timeline / sequence
+            </button>
+          </div>
+
+          <dl class="compare-metrics">
+            <div>
+              <dt>Active compare mode</dt>
+              <dd id="compare-mode" data-testid="compare-mode">side-by-side</dd>
+            </div>
+            <div>
+              <dt>Mode label</dt>
+              <dd id="compare-mode-title" data-testid="compare-mode-title">Side-by-side</dd>
+            </div>
+            <div class="metric-span-2">
+              <dt>Mode description</dt>
+              <dd id="compare-mode-description" data-testid="compare-mode-description">
+                Each showcase stage gets the same visual weight so source, timing, and stems stay easy to compare.
+              </dd>
+            </div>
+            <div>
+              <dt>Compare token</dt>
+              <dd id="compare-token" data-testid="compare-token">—</dd>
+            </div>
+            <div>
+              <dt>Runtime health</dt>
+              <dd id="compare-health" data-testid="compare-health">—</dd>
+            </div>
+            <div>
+              <dt>Runtime source label</dt>
+              <dd id="runtime-source-text" data-testid="runtime-source-text">Source kind unavailable</dd>
+            </div>
+            <div>
+              <dt>Runtime health note</dt>
+              <dd id="runtime-health-text" data-testid="runtime-health-text">No artifact loaded</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="card compare-canvas" id="compare-canvas" aria-labelledby="compare-canvas-heading" data-testid="compare-canvas" data-mode="side-by-side">
+        <div class="section-heading compare-canvas-heading">
+          <h2 id="compare-canvas-heading">Fixed showcase stages</h2>
+          <p id="stage-board-caption">Load an artifact to reveal the compare layouts.</p>
+        </div>
+
+        <div id="stage-board" class="compare-stage-board" data-testid="stage-board">
+          <div class="compare-empty-state" data-testid="compare-empty-state">
+            <p>No artifact loaded yet.</p>
+            <p>Select a JSON file to reveal the stage showcase, final stems, and runtime metadata.</p>
+          </div>
+        </div>
+
+        <section class="final-stems-strip" aria-labelledby="final-stems-heading">
+          <div class="section-heading compact">
+            <h3 id="final-stems-heading">Final stems</h3>
+            <p id="final-stems-label" data-testid="final-stems-label">Waiting on a loaded artifact.</p>
+          </div>
+          <p id="final-stems-details" class="final-stems-details" data-testid="final-stems-details">Waiting on a loaded artifact.</p>
+        </section>
+      </section>
+
+      <section class="grid" aria-label="Runtime summary panels">
+        <article class="card panel" data-testid="source-panel" aria-labelledby="source-heading">
+          <div class="section-heading">
+            <h2 id="source-heading">Source</h2>
+            <p>High-level source identity and source metadata.</p>
+          </div>
+          <dl class="definition-list">
+            <div>
+              <dt>Kind</dt>
+              <dd id="source-kind" data-testid="source-kind">—</dd>
+            </div>
+            <div>
+              <dt>Source label</dt>
+              <dd id="source-label" data-testid="source-label">—</dd>
+            </div>
+            <div>
+              <dt>Reference</dt>
+              <dd id="source-reference" data-testid="source-reference">—</dd>
+            </div>
+            <div>
+              <dt>Metadata</dt>
+              <dd id="source-metadata" data-testid="source-metadata">—</dd>
+            </div>
+            <div>
+              <dt>Loaded path</dt>
+              <dd id="artifact-path" data-testid="artifact-path">—</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="card panel" data-testid="health-panel" aria-labelledby="health-heading">
+          <div class="section-heading">
+            <h2 id="health-heading">Health</h2>
+            <p>Runtime health and fallback provenance.</p>
+          </div>
+          <dl class="definition-list">
+            <div>
+              <dt>State</dt>
+              <dd id="health-state" data-testid="health-state">—</dd>
+            </div>
+            <div>
+              <dt>Reason</dt>
+              <dd id="health-reason" data-testid="health-reason">—</dd>
+            </div>
+            <div>
+              <dt>Requested model</dt>
+              <dd id="requested-model-path" data-testid="requested-model-path">—</dd>
+            </div>
+            <div>
+              <dt>Effective model</dt>
+              <dd id="model-path" data-testid="model-path">—</dd>
+            </div>
+            <div>
+              <dt>Fallback applied</dt>
+              <dd id="fallback-applied" data-testid="fallback-applied">—</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="card panel" data-testid="timing-panel" aria-labelledby="timing-heading">
+          <div class="section-heading">
+            <h2 id="timing-heading">Timing</h2>
+            <p>Stage timing summary preserved from the live runtime artifact.</p>
+          </div>
+          <dl class="definition-list timing-grid">
+            <div>
+              <dt>STFT</dt>
+              <dd id="timing-stft" data-testid="timing-stft">—</dd>
+            </div>
+            <div>
+              <dt>Infer</dt>
+              <dd id="timing-infer" data-testid="timing-infer">—</dd>
+            </div>
+            <div>
+              <dt>ISTFT</dt>
+              <dd id="timing-istft" data-testid="timing-istft">—</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd id="timing-total" data-testid="timing-total">—</dd>
+            </div>
+            <div>
+              <dt>Chunk</dt>
+              <dd id="timing-chunk" data-testid="timing-chunk">—</dd>
+            </div>
+            <div>
+              <dt>Sample rate</dt>
+              <dd id="sample-rate" data-testid="sample-rate">—</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="card panel" data-testid="stem-panel" aria-labelledby="stem-heading">
+          <div class="section-heading">
+            <h2 id="stem-heading">Stems</h2>
+            <p>Final stem outputs and queue/drop telemetry.</p>
+          </div>
+          <dl class="definition-list">
+            <div>
+              <dt>Vocals</dt>
+              <dd id="stem-vocals" data-testid="stem-vocals">—</dd>
+            </div>
+            <div>
+              <dt>Drums</dt>
+              <dd id="stem-drums" data-testid="stem-drums">—</dd>
+            </div>
+            <div>
+              <dt>Bass</dt>
+              <dd id="stem-bass" data-testid="stem-bass">—</dd>
+            </div>
+            <div>
+              <dt>Other</dt>
+              <dd id="stem-other" data-testid="stem-other">—</dd>
+            </div>
+            <div>
+              <dt>Queue depth</dt>
+              <dd id="queue-depth" data-testid="queue-depth">—</dd>
+            </div>
+            <div>
+              <dt>Drop count</dt>
+              <dd id="drop-count" data-testid="drop-count">—</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="card panel panel-wide" data-testid="provenance-panel" aria-labelledby="provenance-heading">
+          <div class="section-heading">
+            <h2 id="provenance-heading">Provenance</h2>
+            <p>Operational metadata, runtime mode, and timestamped status.</p>
+          </div>
+          <dl class="definition-list provenance-grid">
+            <div>
+              <dt>Input</dt>
+              <dd id="input-path" data-testid="input-path">—</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd id="status" data-testid="status">—</dd>
+            </div>
+            <div>
+              <dt>Timestamp</dt>
+              <dd id="timestamp" data-testid="timestamp">—</dd>
+            </div>
+            <div>
+              <dt>Chunk index</dt>
+              <dd id="chunk-index" data-testid="chunk-index">—</dd>
+            </div>
+            <div>
+              <dt>Device requested</dt>
+              <dd id="device-requested" data-testid="device-requested">—</dd>
+            </div>
+            <div>
+              <dt>Device used</dt>
+              <dd id="device-used" data-testid="device-used">—</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd id="mode" data-testid="mode">—</dd>
+            </div>
+            <div>
+              <dt>Clock source</dt>
+              <dd id="clock-source" data-testid="clock-source">—</dd>
+            </div>
+            <div>
+              <dt>Clock fallback</dt>
+              <dd id="clock-fallback" data-testid="clock-fallback">—</dd>
+            </div>
+            <div>
+              <dt>Samples processed</dt>
+              <dd id="samples-processed" data-testid="samples-processed">—</dd>
+            </div>
+            <div>
+              <dt>Channels</dt>
+              <dd id="channels" data-testid="channels">—</dd>
+            </div>
+            <div>
+              <dt>Sample width</dt>
+              <dd id="sample-width" data-testid="sample-width">—</dd>
+            </div>
+          </dl>
+          <div class="stage-list-wrap">
+            <h3>Fixed showcase stages</h3>
+            <ul id="stages-list" class="stage-list" data-testid="stages-list">
+              <li>—</li>
+            </ul>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

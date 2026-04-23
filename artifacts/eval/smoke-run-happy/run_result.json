@@ -1,0 +1,20 @@
+{
+  "dataset": "musdb18",
+  "dataset_root": "/tmp/tmp.NOrkDDtlVa",
+  "dry_run": true,
+  "environment": {
+    "gpu_model": null,
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python_version": "3.12.3"
+  },
+  "error_message": null,
+  "error_stage": null,
+  "output_dir": "artifacts/eval/smoke-run-happy",
+  "protocol_version": "1.0",
+  "status": "ok",
+  "timestamp": "2026-04-20T08:39:06.608159+00:00",
+  "track_artifacts": [
+    "artifacts/eval/smoke-run-happy/track_000.json"
+  ],
+  "track_count": 1
+}

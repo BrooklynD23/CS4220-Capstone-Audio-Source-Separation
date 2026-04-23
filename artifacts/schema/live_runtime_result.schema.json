@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cs4220-capstone.local/schema/live_runtime_result.schema.json",
+  "title": "LiveRuntimeResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "input",
+    "sample_rate_hz",
+    "chunk_duration_s",
+    "chunk_index",
+    "stft_ms",
+    "infer_ms",
+    "istft_ms",
+    "total_ms",
+    "status",
+    "error_stage",
+    "error_message",
+    "timestamp",
+    "health_state",
+    "health_reason",
+    "requested_model_path",
+    "fallback_applied",
+    "queue_depth",
+    "drop_count",
+    "model_path",
+    "stem_paths",
+    "metadata"
+  ],
+  "properties": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reference"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["mp3", "video_audio", "mic"]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "input": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sample_rate_hz": {
+      "type": "integer",
+      "minimum": 8000,
+      "maximum": 48000
+    },
+    "chunk_duration_s": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 30.0
+    },
+    "chunk_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stft_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "infer_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "istft_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "total_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "error_stage": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error_message": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "health_state": {
+      "type": "string",
+      "enum": ["healthy", "degraded", "fallback"]
+    },
+    "health_reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_model_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fallback_applied": {
+      "type": "boolean"
+    },
+    "queue_depth": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "drop_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "model_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stem_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vocals", "drums", "bass", "other"],
+      "properties": {
+        "vocals": {
+          "type": "string",
+          "minLength": 1
+        },
+        "drums": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bass": {
+          "type": "string",
+          "minLength": 1
+        },
+        "other": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_requested",
+        "device_used",
+        "mode",
+        "clock_source",
+        "clock_fallback",
+        "samples_processed",
+        "channels",
+        "sample_width_bytes",
+        "stages"
+      ],
+      "properties": {
+        "device_requested": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "device_used": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["smoke", "full"]
+        },
+        "clock_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clock_fallback": {
+          "type": "boolean"
+        },
+        "samples_processed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "sample_width_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["stft", "infer", "istft"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cs4220-capstone.local/schema/mic_latency_result.schema.json",
+  "title": "MicLatencyResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "input",
+    "output_dir",
+    "live_artifact_path",
+    "capture_backend_name",
+    "capture_duration_s",
+    "capture_latency_ms",
+    "end_to_end_latency_ms",
+    "device_requested",
+    "device_used",
+    "status",
+    "phase",
+    "error_stage",
+    "error_message",
+    "stderr",
+    "live_cli_exit_code",
+    "live_runtime_status",
+    "live_runtime_error_stage",
+    "live_runtime_error_message",
+    "timestamp",
+    "metadata"
+  ],
+  "properties": {
+    "input": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_dir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "live_artifact_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capture_backend_name": {
+      "type": "string",
+      "enum": ["fake", "sounddevice"]
+    },
+    "capture_duration_s": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 30.0
+    },
+    "capture_latency_ms": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "end_to_end_latency_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "device_requested": {
+      "type": "string",
+      "enum": ["cpu", "gpu"]
+    },
+    "device_used": {
+      "type": "string",
+      "enum": ["cpu", "gpu"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "phase": {
+      "type": "string",
+      "minLength": 1
+    },
+    "error_stage": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error_message": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "live_cli_exit_code": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "live_runtime_status": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["ok", "error"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "live_runtime_error_stage": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "live_runtime_error_message": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clock_source",
+        "live_timeout_s",
+        "max_capture_latency_ms",
+        "live_command",
+        "device_requested",
+        "device_used",
+        "capture_backend_name",
+        "capture_duration_s",
+        "source_mode",
+        "model_path"
+      ],
+      "properties": {
+        "clock_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "live_timeout_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_capture_latency_ms": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "live_command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "device_requested": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "device_used": {
+          "type": "string",
+          "enum": ["cpu", "gpu"]
+        },
+        "capture_backend_name": {
+          "type": "string",
+          "enum": ["fake", "sounddevice"]
+        },
+        "capture_duration_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 30.0
+        },
+        "source_mode": {
+          "type": "string",
+          "const": "mic"
+        },
+        "model_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

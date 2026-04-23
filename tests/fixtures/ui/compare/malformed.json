@@ -1,0 +1,48 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 19,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "runtime operating normally",
+  "health_state": "healthy",
+  "infer_ms": 98.0,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 11.75,
+  "metadata": {
+    "channels": 2,
+    "clock_fallback": false,
+    "clock_source": "perf_counter",
+    "device_requested": "gpu",
+    "device_used": "gpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 44100,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 0,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 44100,
+  "source": {
+    "kind": "mp3",
+    "metadata": {
+      "container": "audio/mpeg",
+      "source_label": "native audio source"
+    },
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "vocals": "artifacts/live/smoke/vocals.wav",
+    "instrumental": "artifacts/live/smoke/instrumental.wav"
+  },
+  "stft_ms": 12.5,
+  "timestamp": "2026-04-20T08:09:30Z",
+  "total_ms": 122.25
+}

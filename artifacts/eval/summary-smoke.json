@@ -1,0 +1,12 @@
+{
+  "dataset": "musdb18",
+  "error_stage": null,
+  "generated_at": "2026-04-21T00:16:15.429192+00:00",
+  "pass": true,
+  "passes_threshold": true,
+  "protocol_version": "1.0",
+  "status": "ok",
+  "threshold_db": 5.0,
+  "track_count": 1,
+  "vocal_sdr_median_db": 5.0
+}

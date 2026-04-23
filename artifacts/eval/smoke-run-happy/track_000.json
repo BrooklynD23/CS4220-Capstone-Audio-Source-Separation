@@ -1,0 +1,15 @@
+{
+  "error_stage": null,
+  "infer_ms": 12.0,
+  "istft_ms": 4.0,
+  "status": "ok",
+  "stft_ms": 3.0,
+  "targets": {
+    "vocals": {
+      "sdr": 5.0
+    }
+  },
+  "timestamp": "2026-04-20T08:39:06.865604+00:00",
+  "total_ms": 19.0,
+  "track_name": "TrackOne"
+}

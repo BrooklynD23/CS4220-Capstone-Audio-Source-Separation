@@ -1,0 +1,26 @@
+protocol_version: 1.0
+
+dataset:
+  name: musdb18
+  split: test
+  track_selection: held_out
+  channels: stereo
+
+sample_rate_hz: 44100
+chunk_duration_s: 1.0
+
+stems:
+  - vocals
+  - instrumental
+
+aggregation:
+  metric: vocal_sdr_median_db
+  threshold_db: 5.0
+  pass_condition: ">="
+
+immutable_defaults:
+  - dataset.split
+  - sample_rate_hz
+  - stems
+  - aggregation.metric
+  - aggregation.pass_condition
