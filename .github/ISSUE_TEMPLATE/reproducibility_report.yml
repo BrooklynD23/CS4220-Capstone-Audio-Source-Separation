@@ -1,0 +1,77 @@
+name: Reproducibility Issue
+description: Report a problem with reproducing evaluation results or artifacts
+title: "[Reproducibility]: "
+labels: ["reproducibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when the slice verifiers, evaluation metrics, or artifact schema checks
+        produce different results than expected.
+
+  - type: dropdown
+    id: verifier
+    attributes:
+      label: Failing Verifier / Script
+      description: Which script or verifier is failing?
+      options:
+        - scripts/verify/s01_check.sh
+        - scripts/verify/s02_check.sh
+        - scripts/verify/m002_s01_check.sh
+        - scripts/verify/s06_check.sh
+        - scripts/export/export_umx_onnx.py
+        - scripts/export/build_trt_engine.sh
+        - pytest (test suite)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact Command Run
+      description: Paste the exact command you ran.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Command Output
+      description: Paste the full output, including any error messages.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: artifact
+    attributes:
+      label: Relevant Artifact (if any)
+      description: Paste the relevant JSON artifact (e.g. `live_runtime_result.json`, `capstone_evidence_manifest.json`).
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - OS: [e.g. Ubuntu 22.04]
+        - Python: [e.g. 3.11.4]
+        - CUDA: [e.g. 12.1, or N/A]
+        - TensorRT: [e.g. 8.6, or N/A]
+        - See configs/environment.lock.md for expected versions
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have checked `configs/environment.lock.md` and my environment matches the reproducibility assumptions.
+          required: false
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true

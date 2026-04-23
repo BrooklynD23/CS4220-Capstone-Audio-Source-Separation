@@ -1,0 +1,106 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Run command `...`
+        2. Observe error `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include error messages, stack traces, or logs.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Model
+      description: Which separation model were you using?
+      options:
+        - UMX (umx-live.pt)
+        - Demucs (demucs-live.pt)
+        - Other / Not applicable
+    validations:
+      required: false
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Input Source
+      description: What input source were you using?
+      options:
+        - MP3 file
+        - Microphone
+        - Video file
+        - ONNX export
+        - TensorRT build
+        - Other / Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide your environment details.
+      placeholder: |
+        - OS: [e.g. Ubuntu 22.04]
+        - Python: [e.g. 3.11.4]
+        - CUDA: [e.g. 12.1, or N/A]
+        - TensorRT: [e.g. 8.6, or N/A]
+        - Package versions: (output of `pip list | grep -E "onnx|torch|demucs"`)
+    validations:
+      required: true
+
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Relevant Artifacts
+      description: Paste relevant JSON artifacts (e.g. `live_runtime_result.json`) or log snippets.
+      render: json
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true
+        - label: I have included all relevant environment details above.
+          required: true
