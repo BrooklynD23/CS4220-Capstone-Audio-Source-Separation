@@ -102,5 +102,3 @@ bash scripts/export/build_trt_engine.sh \
 ```
 
 For deterministic reruns and environment assumptions, see `configs/environment.lock.md`.
-nment.lock.md`.
-t.lock.md`.

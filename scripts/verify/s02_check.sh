@@ -2,6 +2,29 @@
 set -euo pipefail
 
 ARTIFACT_ROOT="artifacts/live"
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: bash scripts/verify/s02_check.sh [--dry-run]"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "s02_check: dry-run mode uses fixture audio and fake runtime paths"
+fi
+
 DEFAULT_MODEL_PATH="$(python - <<'PY'
 from live_runtime.live_core import DEFAULT_MODEL_PATH
 print(DEFAULT_MODEL_PATH)

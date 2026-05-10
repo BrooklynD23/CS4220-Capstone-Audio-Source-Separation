@@ -4,6 +4,28 @@ set -u
 PASS_COUNT=0
 FAIL_COUNT=0
 RESULTS=()
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: bash scripts/verify/s01_check.sh [--dry-run]"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "s01_check: dry-run mode uses CI-safe smoke commands"
+fi
 
 now_ms() {
   python - <<'PY'
@@ -64,10 +86,10 @@ mkdir -p artifacts/eval/smoke-run artifacts/bench artifacts/export artifacts/ben
 mkdir -p artifacts/eval/.tmp_musdb/test/TrackSmoke01
 
 run_check "environment-lock-sections" check_environment_lock_sections
-run_check "pytest protocol guardrails" pytest tests/eval/test_protocol_guardrails.py -q
-run_check "pytest metric aggregation" pytest tests/eval/test_metric_aggregation.py -q
-run_check "pytest timing schema" pytest tests/benchmark/test_timing_schema.py -q
-run_check "pytest export pipeline scripts" pytest tests/export/test_export_pipeline_scripts.py -q
+run_check "pytest protocol guardrails" pytest tests/eval/test_protocol_guardrails.py -q --no-cov
+run_check "pytest metric aggregation" pytest tests/eval/test_metric_aggregation.py -q --no-cov
+run_check "pytest timing schema" pytest tests/benchmark/test_timing_schema.py -q --no-cov
+run_check "pytest export pipeline scripts" pytest tests/export/test_export_pipeline_scripts.py -q --no-cov
 
 run_check "eval smoke dry-run" \
   python scripts/eval/run_umx_eval.py \

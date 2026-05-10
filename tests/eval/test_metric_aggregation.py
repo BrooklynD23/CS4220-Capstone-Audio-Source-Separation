@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +15,7 @@ from scripts.eval.aggregate_metrics import aggregate_summary, extract_vocals_sdr
 FIXTURE_DIR = PROJECT_ROOT / "tests/fixtures/eval"
 PROTOCOL_PATH = PROJECT_ROOT / "scripts/eval/eval_protocol.yaml"
 RUNNER_PATH = PROJECT_ROOT / "scripts/eval/run_umx_eval.py"
+DEMUCS_RUNNER_PATH = PROJECT_ROOT / "scripts/eval/run_demucs_eval.py"
 
 
 def _load_json(path: Path):
@@ -139,3 +139,63 @@ def test_runner_model_load_failure_surfaces_stage_marker(tmp_path: Path) -> None
     assert run_result["status"] == "error"
     assert run_result["error_stage"] == "model_load_failed"
     assert "model" in run_result["error_message"].lower()
+
+
+def test_non_dry_run_real_track_rejects_placeholder_track_without_mixture(tmp_path: Path) -> None:
+    from scripts.eval.run_umx_eval import _real_track_result
+
+    track_path = tmp_path / "musdb18" / "test" / "PlaceholderTrack"
+    track_path.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError, match="mixture.wav"):
+        _real_track_result(track_path, 0, separator=object(), device="cpu")
+
+
+def test_demucs_runner_dry_run_emits_aggregate_compatible_artifacts(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "dataset"
+    (dataset_root / "test" / "TrackOne").mkdir(parents=True)
+    output_dir = tmp_path / "demucs_eval_output"
+
+    cmd = [
+        sys.executable,
+        str(DEMUCS_RUNNER_PATH),
+        "--protocol",
+        str(PROTOCOL_PATH),
+        "--dataset-root",
+        str(dataset_root),
+        "--output",
+        str(output_dir),
+        "--max-tracks",
+        "1",
+        "--dry-run",
+    ]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    assert proc.returncode == 0, proc.stderr
+    run_result = _load_json(output_dir / "run_result.json")
+    track_result = _load_json(output_dir / "track_000.json")
+
+    assert run_result["status"] == "ok"
+    assert run_result["model_family"] == "demucs"
+    assert run_result["track_artifacts"] == [str(output_dir / "track_000.json")]
+    assert track_result["model_family"] == "demucs"
+    assert isinstance(track_result["targets"]["vocals"]["sdr"], float)
+
+    summary = aggregate_summary(
+        track_results=[track_result],
+        threshold_db=5.0,
+        protocol_version="1.0",
+        dataset="musdb18",
+    )
+    assert summary["track_count"] == 1
+
+
+def test_demucs_real_track_rejects_placeholder_track_without_mixture(tmp_path: Path) -> None:
+    from scripts.eval.run_demucs_eval import _real_track_result
+
+    track_path = tmp_path / "musdb18" / "test" / "PlaceholderTrack"
+    track_path.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError, match="mixture.wav"):
+        _real_track_result(track_path, 0, runtime=object())

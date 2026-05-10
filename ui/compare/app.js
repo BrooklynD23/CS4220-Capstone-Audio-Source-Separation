@@ -25,6 +25,26 @@ const STAGE_NOTES = {
 const elements = {
   fileInput: document.getElementById('artifact-file'),
   loadButton: document.getElementById('load-button'),
+  benchmarkFileInput: document.getElementById('benchmark-file'),
+  loadBenchmarkButton: document.getElementById('load-benchmark-button'),
+  benchmarkKindCpu: document.getElementById('benchmark-kind-cpu'),
+  benchmarkKindGpu: document.getElementById('benchmark-kind-gpu'),
+  benchmarkCpuMs: document.getElementById('benchmark-cpu-ms'),
+  benchmarkGpuMs: document.getElementById('benchmark-gpu-ms'),
+  benchmarkDelta: document.getElementById('benchmark-delta'),
+  inputAudioFile: document.getElementById('input-audio-file'),
+  stemAudioFiles: document.getElementById('stem-audio-files'),
+  loadAudioButton: document.getElementById('load-audio-button'),
+  audioFileCount: document.getElementById('audio-file-count'),
+  waveformCanvases: {
+    input: document.getElementById('waveform-input'),
+    vocals: document.getElementById('waveform-vocals'),
+    drums: document.getElementById('waveform-drums'),
+    bass: document.getElementById('waveform-bass'),
+    other: document.getElementById('waveform-other'),
+  },
+  playbackToggle: document.getElementById('playback-toggle'),
+  playbackState: document.getElementById('playback-state'),
   selectedFile: document.getElementById('selected-file'),
   errorBanner: document.getElementById('error-banner'),
   statusBanner: document.getElementById('status-banner'),
@@ -83,6 +103,7 @@ const compareState = {
   artifactToken: '—',
   activeMode: 'side-by-side',
   lastModeMessage: 'Awaiting a loaded artifact.',
+  audioElement: null,
 };
 
 window.__compareState = compareState;
@@ -215,6 +236,14 @@ function setEmptyState() {
   syncModeButtons();
 }
 
+function setEmptyBenchmarkState() {
+  setText(elements.benchmarkKindCpu, '—');
+  setText(elements.benchmarkKindGpu, '—');
+  setText(elements.benchmarkCpuMs, '—');
+  setText(elements.benchmarkGpuMs, '—');
+  setText(elements.benchmarkDelta, '—');
+}
+
 function renderStages(stages, stageTimings = {}) {
   elements.stagesList.innerHTML = '';
   const normalizedStages = stages.length > 0 ? stages : ['—'];
@@ -280,6 +309,233 @@ function expectBoolean(value, path) {
     throw new Error(`${path} must be a boolean`);
   }
   return value;
+}
+
+function maybeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function phaseSummary(phase) {
+  if (!phase || typeof phase !== 'object') {
+    return null;
+  }
+  const summary = phase.summary && typeof phase.summary === 'object' ? phase.summary : phase;
+  const executionKind = summary.execution_kind || phase.execution_kind;
+  const msPerChunk = maybeNumber(summary.wall_clock_ms_per_chunk);
+  const throughput = maybeNumber(summary.throughput_chunks_per_second);
+  if (typeof executionKind !== 'string' || msPerChunk === null) {
+    return null;
+  }
+  return { executionKind, msPerChunk, throughput };
+}
+
+function normalizeBenchmarkPayload(payload) {
+  const root = expectObject(payload, 'benchmark artifact');
+  const candidates = [];
+
+  if (Array.isArray(root.phases)) {
+    root.phases.forEach((phase) => {
+      const candidate = phaseSummary(phase);
+      if (candidate) {
+        candidates.push(candidate);
+      }
+    });
+  } else {
+    const candidate = phaseSummary(root);
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  if (candidates.length === 0) {
+    throw new Error('benchmark artifact must contain throughput summaries with execution_kind and wall_clock_ms_per_chunk');
+  }
+
+  const cpu = candidates.find((candidate) => candidate.executionKind === 'cpu') || candidates[0];
+  const accelerated = candidates.find((candidate) => candidate.executionKind !== 'cpu') || cpu;
+  const delta = accelerated.msPerChunk > 0 ? cpu.msPerChunk / accelerated.msPerChunk : 0;
+  return { cpu, accelerated, delta };
+}
+
+function renderBenchmarkComparison(comparison) {
+  setText(elements.benchmarkKindCpu, comparison.cpu.executionKind);
+  setText(elements.benchmarkKindGpu, comparison.accelerated.executionKind);
+  setText(elements.benchmarkCpuMs, `${comparison.cpu.msPerChunk.toFixed(2)} ms`);
+  setText(elements.benchmarkGpuMs, `${comparison.accelerated.msPerChunk.toFixed(2)} ms`);
+  setText(elements.benchmarkDelta, `${comparison.delta.toFixed(2)}x`);
+}
+
+async function loadBenchmarkFromFile() {
+  const file = elements.benchmarkFileInput.files?.[0];
+  if (!file) {
+    setEmptyBenchmarkState();
+    setBanner('Select a benchmark JSON artifact before loading.', { type: 'error' });
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(await file.text());
+    const comparison = normalizeBenchmarkPayload(payload);
+    renderBenchmarkComparison(comparison);
+    setBanner(`Loaded benchmark evidence ${file.name}.`, { type: 'status' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setBanner(`Failed to parse or validate benchmark artifact: ${message}`, { type: 'error' });
+  }
+}
+
+function readAscii(view, offset, length) {
+  let text = '';
+  for (let index = 0; index < length; index += 1) {
+    text += String.fromCharCode(view.getUint8(offset + index));
+  }
+  return text;
+}
+
+function decodePcmWav(buffer) {
+  const view = new DataView(buffer);
+  if (readAscii(view, 0, 4) !== 'RIFF' || readAscii(view, 8, 4) !== 'WAVE') {
+    throw new Error('WAV file must use RIFF/WAVE format');
+  }
+
+  let offset = 12;
+  let channels = 1;
+  let bitsPerSample = 16;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset + 8 <= view.byteLength) {
+    const chunkId = readAscii(view, offset, 4);
+    const chunkSize = view.getUint32(offset + 4, true);
+    const payloadOffset = offset + 8;
+    if (chunkId === 'fmt ') {
+      const audioFormat = view.getUint16(payloadOffset, true);
+      if (audioFormat !== 1) {
+        throw new Error('Only PCM WAV files are supported');
+      }
+      channels = view.getUint16(payloadOffset + 2, true);
+      bitsPerSample = view.getUint16(payloadOffset + 14, true);
+    }
+    if (chunkId === 'data') {
+      dataOffset = payloadOffset;
+      dataSize = chunkSize;
+      break;
+    }
+    offset = payloadOffset + chunkSize + (chunkSize % 2);
+  }
+
+  if (dataOffset < 0 || bitsPerSample !== 16) {
+    throw new Error('WAV file must contain 16-bit PCM data');
+  }
+
+  const sampleCount = Math.floor(dataSize / 2 / channels);
+  const samples = new Float32Array(sampleCount);
+  for (let frame = 0; frame < sampleCount; frame += 1) {
+    let sum = 0;
+    for (let channel = 0; channel < channels; channel += 1) {
+      sum += view.getInt16(dataOffset + ((frame * channels + channel) * 2), true) / 32768;
+    }
+    samples[frame] = sum / channels;
+  }
+  return samples;
+}
+
+function drawWaveform(canvas, samples) {
+  const context = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = '#081523';
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = '#8ee3ff';
+  context.lineWidth = 2;
+  context.beginPath();
+  const centerY = height / 2;
+  for (let x = 0; x < width; x += 1) {
+    const start = Math.floor((x / width) * samples.length);
+    const end = Math.max(start + 1, Math.floor(((x + 1) / width) * samples.length));
+    let min = 1;
+    let max = -1;
+    for (let index = start; index < end; index += 1) {
+      const value = samples[index] || 0;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    context.moveTo(x, centerY - max * (height * 0.42));
+    context.lineTo(x, centerY - min * (height * 0.42));
+  }
+  context.stroke();
+  canvas.dataset.rendered = 'true';
+}
+
+function stemKeyForFile(file) {
+  const name = file.name.toLowerCase();
+  return ['vocals', 'drums', 'bass', 'other'].find((stem) => name.includes(stem)) || null;
+}
+
+async function loadAudioWaveforms() {
+  const inputFile = elements.inputAudioFile.files?.[0];
+  const stemFiles = Array.from(elements.stemAudioFiles.files || []);
+  if (!inputFile || stemFiles.length < 4) {
+    setBanner('Load one input WAV and four stem WAV files.', { type: 'error' });
+    return;
+  }
+
+  try {
+    const inputSamples = decodePcmWav(await inputFile.arrayBuffer());
+    drawWaveform(elements.waveformCanvases.input, inputSamples);
+
+    const stemsByKey = {};
+    stemFiles.forEach((file) => {
+      const key = stemKeyForFile(file);
+      if (key) {
+        stemsByKey[key] = file;
+      }
+    });
+
+    for (const key of ['vocals', 'drums', 'bass', 'other']) {
+      if (!stemsByKey[key]) {
+        throw new Error(`Missing ${key}.wav stem file`);
+      }
+      const samples = decodePcmWav(await stemsByKey[key].arrayBuffer());
+      drawWaveform(elements.waveformCanvases[key], samples);
+    }
+
+    if (compareState.audioElement) {
+      compareState.audioElement.pause();
+      URL.revokeObjectURL(compareState.audioElement.src);
+    }
+    compareState.audioElement = new Audio(URL.createObjectURL(inputFile));
+    compareState.audioElement.addEventListener('ended', () => {
+      setText(elements.playbackState, 'stopped');
+      setText(elements.playbackToggle, 'Play');
+      elements.playbackToggle.setAttribute('aria-pressed', 'false');
+    });
+
+    setText(elements.audioFileCount, `${1 + stemFiles.length} files`);
+    setBanner(`Loaded WAV assets for waveform inspection.`, { type: 'status' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setBanner(`Failed to load WAV assets: ${message}`, { type: 'error' });
+  }
+}
+
+function togglePlayback() {
+  const audio = compareState.audioElement;
+  if (!audio) {
+    setBanner('Load WAV assets before using playback.', { type: 'error' });
+    return;
+  }
+  if (audio.paused) {
+    audio.play();
+    setText(elements.playbackState, 'playing');
+    setText(elements.playbackToggle, 'Pause');
+    elements.playbackToggle.setAttribute('aria-pressed', 'true');
+  } else {
+    audio.pause();
+    setText(elements.playbackState, 'paused');
+    setText(elements.playbackToggle, 'Play');
+    elements.playbackToggle.setAttribute('aria-pressed', 'false');
+  }
 }
 
 function normalizeStageTimings(stageTimingsSource, stages) {
@@ -735,8 +991,12 @@ function handleFileSelection() {
 function initialize() {
   compareState.activeMode = 'side-by-side';
   setEmptyState();
+  setEmptyBenchmarkState();
   elements.fileInput.addEventListener('change', handleFileSelection);
   elements.loadButton.addEventListener('click', loadArtifactFromFile);
+  elements.loadBenchmarkButton.addEventListener('click', loadBenchmarkFromFile);
+  elements.loadAudioButton.addEventListener('click', loadAudioWaveforms);
+  elements.playbackToggle.addEventListener('click', togglePlayback);
   elements.compareModeButtons.forEach((button) => {
     button.addEventListener('click', () => setCompareMode(button.dataset.mode));
   });

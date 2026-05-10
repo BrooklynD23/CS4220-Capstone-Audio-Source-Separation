@@ -26,6 +26,7 @@ target/
 vendor/
 *.log
 coverage/
+.coverage
 .cache/
 tmp/
 .claude/

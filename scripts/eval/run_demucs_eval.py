@@ -5,9 +5,21 @@ import json
 import platform
 import sys
 import time
+import wave
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.eval.run_umx_eval import (
+    _discover_tracks,
+    _load_protocol,
+    _simulate_model_load,
+    _validate_real_track_layout,
+)
 
 
 def _now_iso() -> str:
@@ -19,21 +31,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _load_protocol(path: Path) -> dict[str, Any]:
-    try:
-        import yaml
-    except ModuleNotFoundError as exc:  # pragma: no cover
-        raise RuntimeError("Missing dependency 'PyYAML'.") from exc
-
-    if not path.exists():
-        raise ValueError(f"Protocol file not found: {path}")
-
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("Protocol YAML root must be an object.")
-    return payload
-
-
 def _environment_fingerprint() -> dict[str, str | None]:
     return {
         "python_version": platform.python_version(),
@@ -42,46 +39,15 @@ def _environment_fingerprint() -> dict[str, str | None]:
     }
 
 
-def _discover_tracks(dataset_root: Path, split: str, max_tracks: int) -> list[Path]:
-    split_root = dataset_root / split
-    source_root = split_root if split_root.exists() else dataset_root
-
-    if not source_root.exists() or not source_root.is_dir():
-        raise FileNotFoundError(f"Dataset root not found: {dataset_root}")
-
-    tracks: list[Path] = sorted((p for p in source_root.iterdir() if p.is_dir()), key=lambda p: p.name)
-    if not tracks:
-        raise ValueError(f"No track directories found under: {source_root}")
-
-    selected = tracks[:max_tracks]
-    for track in selected:
-        if not track.name.strip():
-            raise ValueError(f"Malformed track metadata for path: {track}")
-    return selected
-
-
-def _simulate_model_load(simulate_failure: bool, timeout_s: float, load_delay_s: float) -> None:
-    start = time.perf_counter()
-    if load_delay_s > 0:
-        time.sleep(load_delay_s)
-
-    elapsed = time.perf_counter() - start
-    if elapsed > timeout_s:
-        raise TimeoutError(f"Model load exceeded timeout ({elapsed:.2f}s > {timeout_s:.2f}s)")
-
-    if simulate_failure:
-        raise RuntimeError("Simulated model load failure.")
-
-
 def _dry_run_track_result(track_name: str, index: int) -> dict[str, Any]:
-    # Deterministic per-track outputs for smoke tests.
-    sdr = 5.0 + (index * 0.1)
-    stft_ms = 3.0 + index
-    infer_ms = 12.0 + index
-    istft_ms = 4.0 + index
+    sdr = 5.4 + (index * 0.1)
+    stft_ms = 2.5 + index
+    infer_ms = 10.0 + index
+    istft_ms = 3.5 + index
 
     return {
         "track_name": track_name,
+        "model_family": "demucs",
         "targets": {"vocals": {"sdr": round(sdr, 3)}},
         "stft_ms": stft_ms,
         "infer_ms": infer_ms,
@@ -93,73 +59,104 @@ def _dry_run_track_result(track_name: str, index: int) -> dict[str, Any]:
     }
 
 
-def _validate_real_track_layout(track_path: Path) -> Path:
-    mix_path = track_path / "mixture.wav"
-    if not mix_path.exists():
-        raise FileNotFoundError(f"Real evaluation requires mixture.wav for track: {track_path}")
+def _load_demucs_runtime() -> Any:
+    try:
+        import torch  # type: ignore
+        from demucs.apply import apply_model  # type: ignore
+        from demucs.audio import convert_audio  # type: ignore
+        from demucs.pretrained import get_model  # type: ignore
+    except ImportError as exc:  # pragma: no cover - depends on optional runtime package
+        raise RuntimeError(
+            "Demucs full evaluation requires optional Demucs runtime dependencies. "
+            "Install demucs and rerun without --dry-run."
+        ) from exc
+    return {
+        "apply_model": apply_model,
+        "convert_audio": convert_audio,
+        "get_model": get_model,
+        "torch": torch,
+    }
 
-    missing_references = [
-        stem_name
-        for stem_name in ("vocals.wav", "drums.wav", "bass.wav", "other.wav")
-        if not (track_path / stem_name).exists()
-    ]
-    if missing_references:
-        raise FileNotFoundError(
-            f"Real evaluation requires reference stems for track {track_path}: "
-            f"missing {', '.join(missing_references)}"
-        )
 
-    return mix_path
-
-
-def _real_track_result(track_path: Path, index: int, separator: Any, device: str) -> dict[str, Any]:
-    """Run real UMX separation on a MUSDB18 track and compute vocal SDR."""
-    import time
-    import wave
-
-    import numpy as np
-    from live_runtime.umx_separator import separate_tensor
-
-    mix_path = _validate_real_track_layout(track_path)
-
-    with wave.open(str(mix_path), "rb") as wf:
-        sr = wf.getframerate()
-        nch = wf.getnchannels()
+def _read_wav_tensor(path: Path, torch: Any) -> tuple[Any, int]:
+    with wave.open(str(path), "rb") as wf:
+        sample_rate = wf.getframerate()
+        channels = wf.getnchannels()
         frames = wf.readframes(wf.getnframes())
 
-    mix_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-    if nch == 2:
-        mix_tensor = mix_np.reshape(-1, 2).T  # (2, samples)
-        import torch
-        mix_tensor = torch.from_numpy(mix_tensor.copy())
+    import numpy as np
+
+    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    if channels == 1:
+        tensor = torch.from_numpy(audio.copy()).unsqueeze(0)
     else:
-        import torch
-        mix_tensor = torch.from_numpy(mix_np.copy()).unsqueeze(0).expand(2, -1).contiguous()
+        tensor = torch.from_numpy(audio.reshape(-1, channels).T.copy())
+    return tensor, sample_rate
 
-    t_total = time.perf_counter()
-    sep_result = separate_tensor(mix_tensor, sr, separator, device)
-    total_ms = round((time.perf_counter() - t_total) * 1000.0, 3)
 
-    sdr_val = 5.0  # fallback
-    ref_path = track_path / "vocals.wav"
-    if ref_path.exists() and "vocals" in sep_result.stems:
-        with wave.open(str(ref_path), "rb") as wf:
-            ref_frames = wf.readframes(wf.getnframes())
-        ref_np = np.frombuffer(ref_frames, dtype=np.int16).astype(np.float32) / 32768.0
-        est = sep_result.stems["vocals"].mean(axis=0) if sep_result.stems["vocals"].ndim == 2 else sep_result.stems["vocals"]
-        n = min(len(ref_np), len(est))
-        ref_t, est_t = ref_np[:n], est[:n]
-        num = np.sum(ref_t ** 2)
-        denom = np.sum((ref_t - est_t) ** 2) + 1e-10
-        sdr_val = round(float(10.0 * np.log10(num / denom + 1e-10)), 3)
+def _sdr_db(reference: Any, estimate: Any) -> float:
+    import numpy as np
+
+    ref_np = reference.detach().cpu().numpy() if hasattr(reference, "detach") else np.asarray(reference)
+    est_np = estimate.detach().cpu().numpy() if hasattr(estimate, "detach") else np.asarray(estimate)
+    ref_np = ref_np.mean(axis=0) if ref_np.ndim == 2 else ref_np
+    est_np = est_np.mean(axis=0) if est_np.ndim == 2 else est_np
+    n = min(ref_np.shape[-1], est_np.shape[-1])
+    ref_np = ref_np[..., :n]
+    est_np = est_np[..., :n]
+    numerator = np.sum(ref_np**2)
+    denominator = np.sum((ref_np - est_np) ** 2) + 1e-10
+    return round(float(10.0 * np.log10(numerator / denominator + 1e-10)), 3)
+
+
+def _real_track_result(track_path: Path, index: int, runtime: Any) -> dict[str, Any]:
+    mix_path = _validate_real_track_layout(track_path)
+    torch = runtime["torch"]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    load_started = time.perf_counter()
+    model = runtime["get_model"]("htdemucs").to(device)
+    model.eval()
+    load_ms = (time.perf_counter() - load_started) * 1000.0
+
+    mix, sample_rate = _read_wav_tensor(mix_path, torch)
+    model_sample_rate = int(getattr(model, "samplerate", sample_rate))
+    model_channels = int(getattr(model, "audio_channels", mix.shape[0]))
+
+    stft_started = time.perf_counter()
+    mix = runtime["convert_audio"](mix, sample_rate, model_sample_rate, model_channels)
+    stft_ms = (time.perf_counter() - stft_started) * 1000.0
+
+    infer_started = time.perf_counter()
+    with torch.no_grad():
+        estimates = runtime["apply_model"](
+            model,
+            mix.unsqueeze(0).to(device),
+            split=True,
+            progress=False,
+            device=device,
+        )[0].cpu()
+    infer_ms = (time.perf_counter() - infer_started) * 1000.0
+
+    sources = list(getattr(model, "sources", ("drums", "bass", "other", "vocals")))
+    vocals_index = sources.index("vocals") if "vocals" in sources else len(sources) - 1
+    reference, reference_sample_rate = _read_wav_tensor(track_path / "vocals.wav", torch)
+    if reference_sample_rate != model_sample_rate or reference.shape[0] != model_channels:
+        reference = runtime["convert_audio"](
+            reference,
+            reference_sample_rate,
+            model_sample_rate,
+            model_channels,
+        )
 
     return {
         "track_name": track_path.name,
-        "targets": {"vocals": {"sdr": sdr_val}},
-        "stft_ms": 0.0,
-        "infer_ms": sep_result.timings.infer_ms,
+        "model_family": "demucs",
+        "targets": {"vocals": {"sdr": _sdr_db(reference, estimates[vocals_index])}},
+        "stft_ms": round(stft_ms, 3),
+        "infer_ms": round(load_ms + infer_ms, 3),
         "istft_ms": 0.0,
-        "total_ms": total_ms,
+        "total_ms": round(stft_ms + load_ms + infer_ms, 3),
         "status": "ok",
         "error_stage": None,
         "timestamp": _now_iso(),
@@ -167,7 +164,7 @@ def _real_track_result(track_path: Path, index: int, separator: Any, device: str
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run UMX evaluation and emit per-track metrics artifacts.")
+    parser = argparse.ArgumentParser(description="Run Demucs evaluation and emit per-track metrics artifacts.")
     parser.add_argument("--protocol", required=True, help="Path to evaluation protocol YAML")
     parser.add_argument("--dataset-root", required=True, help="MUSDB18 dataset root")
     parser.add_argument("--output", required=True, help="Output directory for track artifacts")
@@ -207,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         "dataset_root": str(Path(args.dataset_root)),
         "output_dir": str(output_dir),
         "dry_run": bool(args.dry_run),
+        "model_family": "demucs",
         "track_count": 0,
         "track_artifacts": [],
         "environment": _environment_fingerprint(),
@@ -215,7 +213,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         protocol = _load_protocol(Path(args.protocol))
         split = str(protocol.get("dataset", {}).get("split", "test"))
-
         tracks = _discover_tracks(Path(args.dataset_root), split=split, max_tracks=args.max_tracks)
         base_result["track_count"] = len(tracks)
         base_result["protocol_version"] = str(protocol.get("protocol_version", "unknown"))
@@ -227,19 +224,17 @@ def main(argv: list[str] | None = None) -> int:
             load_delay_s=float(args.simulate_model_load_delay_s),
         )
 
-        separator = None
-        device = "cpu"
+        runtime = None
         if not args.dry_run:
-            from live_runtime.umx_separator import load_umxhq_separator, resolve_device
-            device = resolve_device("gpu")
-            print(f"umx_eval: loading umxhq on {device}", file=sys.stderr)
-            separator = load_umxhq_separator(device)
+            runtime = _load_demucs_runtime()
 
         for index, track_path in enumerate(tracks):
-            if args.dry_run or separator is None:
+            if args.dry_run:
                 artifact = _dry_run_track_result(track_path.name, index)
             else:
-                artifact = _real_track_result(track_path, index, separator, device)
+                started_at = time.perf_counter()
+                artifact = _real_track_result(track_path, index, runtime)
+                artifact["total_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
 
             artifact_path = output_dir / f"track_{index:03d}.json"
             _write_json(artifact_path, artifact)
@@ -294,12 +289,12 @@ def main(argv: list[str] | None = None) -> int:
         base_result.update(
             {
                 "status": "error",
-                "error_stage": "run_umx_eval",
+                "error_stage": "run_demucs_eval",
                 "error_message": str(exc),
             }
         )
         _write_json(run_result_path, base_result)
-        print(f"run_umx_eval_error: {exc}", file=sys.stderr)
+        print(f"run_demucs_eval_error: {exc}", file=sys.stderr)
         return 1
 
     print(f"Wrote run artifact: {run_result_path}")

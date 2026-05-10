@@ -71,6 +71,10 @@
       "type": "string",
       "enum": ["cpu", "gpu"]
     },
+    "execution_kind": {
+      "type": "string",
+      "enum": ["cpu", "gpu_pytorch", "tensorrt"]
+    },
     "status": {
       "type": "string",
       "enum": ["ok", "error"]

@@ -126,9 +126,29 @@ def _summary_from_eval(payload: dict[str, Any], artifact_path: Path) -> dict[str
     }
 
 
+def _execution_kind(payload: dict[str, Any]) -> str:
+    explicit = payload.get("execution_kind")
+    if isinstance(explicit, str) and explicit in {"cpu", "gpu_pytorch", "tensorrt"}:
+        return explicit
+
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        metadata_kind = metadata.get("execution_kind")
+        if isinstance(metadata_kind, str) and metadata_kind in {"cpu", "gpu_pytorch", "tensorrt"}:
+            return metadata_kind
+        device_used = metadata.get("device_used")
+    else:
+        device_used = payload.get("device_used")
+
+    if device_used == "gpu":
+        return "gpu_pytorch"
+    return "cpu"
+
+
 def _summary_from_throughput(payload: dict[str, Any], artifact_path: Path) -> dict[str, Any]:
     return {
         "artifact_path": str(artifact_path),
+        "execution_kind": _execution_kind(payload),
         "status": payload.get("status"),
         "phase": payload.get("phase"),
         "error_stage": payload.get("error_stage"),
@@ -144,6 +164,7 @@ def _summary_from_throughput(payload: dict[str, Any], artifact_path: Path) -> di
 def _summary_from_mic_latency(payload: dict[str, Any], artifact_path: Path) -> dict[str, Any]:
     return {
         "artifact_path": str(artifact_path),
+        "execution_kind": _execution_kind(payload),
         "status": payload.get("status"),
         "phase": payload.get("phase"),
         "error_stage": payload.get("error_stage"),
@@ -160,6 +181,7 @@ def _summary_from_mic_latency(payload: dict[str, Any], artifact_path: Path) -> d
 def _summary_from_live_runtime(payload: dict[str, Any], artifact_path: Path) -> dict[str, Any]:
     return {
         "artifact_path": str(artifact_path),
+        "execution_kind": _execution_kind(payload),
         "status": payload.get("status"),
         "error_stage": payload.get("error_stage"),
         "error_message": payload.get("error_message"),
@@ -265,6 +287,7 @@ def assemble_capstone_evidence(
 
     phases: list[dict[str, Any]] = []
     inputs: dict[str, str] = {}
+    execution_kinds: dict[str, str] = {}
 
     try:
         eval_payload = _validate_payload(_load_json(resolved_eval, kind="evaluation"), EVAL_SCHEMA_PATH, kind="evaluation", artifact_path=resolved_eval)
@@ -287,6 +310,7 @@ def assemble_capstone_evidence(
                 summary=_summary_from_throughput(throughput_payload, resolved_throughput),
             )
         )
+        execution_kinds["throughput"] = _execution_kind(throughput_payload)
         inputs["throughput_artifact_path"] = str(resolved_throughput)
 
         mic_payload = _validate_payload(
@@ -305,6 +329,7 @@ def assemble_capstone_evidence(
                 summary=_summary_from_mic_latency(mic_payload, resolved_mic),
             )
         )
+        execution_kinds["mic_latency"] = _execution_kind(mic_payload)
         inputs["mic_latency_artifact_path"] = str(resolved_mic)
 
         live_payload = _validate_payload(
@@ -321,6 +346,7 @@ def assemble_capstone_evidence(
                 summary=_summary_from_live_runtime(live_payload, resolved_live),
             )
         )
+        execution_kinds["live_runtime"] = _execution_kind(live_payload)
         inputs["live_runtime_artifact_path"] = str(resolved_live)
 
         compare_ui = _parse_compare_ui(resolved_server_log, resolved_pytest_log)
@@ -357,6 +383,7 @@ def assemble_capstone_evidence(
             "phase_order": PHASE_ORDER,
             "phases": phases,
             "inputs": inputs,
+            "execution_kinds": execution_kinds,
         }
         _write_json(output_path, result)
         return result, 0 if overall_status == "ok" else 1
@@ -381,6 +408,7 @@ def assemble_capstone_evidence(
             "phase_order": PHASE_ORDER,
             "phases": phases,
             "inputs": inputs,
+            "execution_kinds": execution_kinds,
         }
         _write_json(output_path, result)
         return result, 1

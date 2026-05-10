@@ -5,6 +5,8 @@ PROJECT_ROOT="."
 LAUNCHER="${PROJECT_ROOT}/scripts/ui/serve_compare_demo.py"
 TEST_FILE="${PROJECT_ROOT}/tests/ui/test_compare_ui.py"
 ARTIFACT_ROOT="${PROJECT_ROOT}/artifacts/live"
+PYTHON_BIN="${PYTHON_BIN:-${PROJECT_ROOT}/.venv/bin/python}"
+PYTEST_BIN="${PYTEST_BIN:-${PROJECT_ROOT}/.venv/bin/pytest}"
 SERVER_LOG_DIR=""
 PYTEST_LOG_DIR=""
 SERVER_LOG=""
@@ -16,6 +18,12 @@ FAIL_COUNT=0
 RESULTS=()
 
 mkdir -p "${ARTIFACT_ROOT}"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="python"
+fi
+if [[ ! -x "${PYTEST_BIN}" ]]; then
+  PYTEST_BIN="pytest"
+fi
 SERVER_LOG_DIR="$(mktemp -d "${ARTIFACT_ROOT}/s05-verify-server-XXXXXX")"
 PYTEST_LOG_DIR="$(mktemp -d "${ARTIFACT_ROOT}/s05-verify-pytest-XXXXXX")"
 SERVER_LOG="${SERVER_LOG_DIR}/server.log"
@@ -30,7 +38,7 @@ cleanup() {
 trap cleanup EXIT
 
 now_ms() {
-  python - <<'PY'
+  "${PYTHON_BIN}" - <<'PY'
 import time
 print(int(time.time() * 1000))
 PY
@@ -68,7 +76,7 @@ fail() {
 }
 
 find_free_port() {
-  python - <<'PY'
+  "${PYTHON_BIN}" - <<'PY'
 import socket
 sock = socket.socket()
 sock.bind(("127.0.0.1", 0))
@@ -83,7 +91,7 @@ wait_for_server() {
   local start now
   start="$(date +%s)"
   while true; do
-    if python - "$url" <<'PY' >/dev/null 2>&1; then
+    if "${PYTHON_BIN}" - "$url" <<'PY' >/dev/null 2>&1; then
 import sys
 from urllib.request import urlopen
 try:
@@ -130,7 +138,7 @@ run_check() {
 
 run_server_smoke() {
   local url="$1"
-  python - "$url" <<'PY'
+  "${PYTHON_BIN}" - "$url" <<'PY'
 import sys
 from urllib.request import urlopen
 url = sys.argv[1]
@@ -147,13 +155,13 @@ PY
 run_pytest_suite() {
   COMPARE_DEMO_BASE_URL="${BASE_URL}" \
   BASE_URL="${BASE_URL}" \
-  pytest "${TEST_FILE}" -q >"${PYTEST_LOG}" 2>&1
+  "${PYTEST_BIN}" "${TEST_FILE}" -q >"${PYTEST_LOG}" 2>&1
 }
 
 PORT="$(find_free_port)"
 BASE_URL="http://127.0.0.1:${PORT}"
 
-python "${LAUNCHER}" --bind 127.0.0.1 --port "${PORT}" --directory "${PROJECT_ROOT}" >"${SERVER_LOG}" 2>&1 &
+"${PYTHON_BIN}" "${LAUNCHER}" --bind 127.0.0.1 --port "${PORT}" --directory "${PROJECT_ROOT}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
 if ! wait_for_server "${BASE_URL}/ui/compare/" 30; then

@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-04-21T00:16:17.771943+00:00",
-  "status": "ok",
-  "error_stage": ,
-  "error_message": dry_run,
-  "onnx": "artifacts/export/umx-smoke.onnx",
+  "dry_run": true,
   "engine": "artifacts/bench/trt/umx-smoke.engine",
-  "timing_cache": "artifacts/bench/trt/umx-smoke.timing.cache",
+  "error_message": "dry_run",
+  "error_stage": null,
   "fp16": false,
-  "dry_run": true
+  "onnx": "artifacts/export/umx-smoke.onnx",
+  "status": "ok",
+  "timestamp": "2026-05-10T02:19:32.313093+00:00",
+  "timing_cache": "artifacts/bench/trt/umx-smoke.timing.cache"
 }

@@ -40,7 +40,7 @@ def _make_eval_summary(*, status: str = "ok") -> dict:
     }
 
 
-def _make_throughput_result(*, status: str = "ok", phase: str = "complete") -> dict:
+def _make_throughput_result(*, status: str = "ok", phase: str = "complete", execution_kind: str = "cpu") -> dict:
     return {
         "input": "fixtures/audio/demo_mix.mp3",
         "output_dir": "artifacts/bench/live-throughput",
@@ -51,6 +51,7 @@ def _make_throughput_result(*, status: str = "ok", phase: str = "complete") -> d
         "throughput_chunks_per_second": 0.444444,
         "device_requested": "cpu",
         "device_used": "cpu",
+        "execution_kind": execution_kind,
         "source_mode": "mp3",
         "status": status,
         "phase": phase,
@@ -74,7 +75,7 @@ def _make_throughput_result(*, status: str = "ok", phase: str = "complete") -> d
     }
 
 
-def _make_mic_latency_result(*, status: str = "ok", phase: str = "complete") -> dict:
+def _make_mic_latency_result(*, status: str = "ok", phase: str = "complete", execution_kind: str = "cpu") -> dict:
     return {
         "input": "fixture:mic-demo",
         "output_dir": "artifacts/bench/mic-latency",
@@ -85,6 +86,7 @@ def _make_mic_latency_result(*, status: str = "ok", phase: str = "complete") -> 
         "end_to_end_latency_ms": 1250.0,
         "device_requested": "cpu",
         "device_used": "cpu",
+        "execution_kind": execution_kind,
         "status": status,
         "phase": phase,
         "error_stage": None if status == "ok" else phase,
@@ -110,7 +112,7 @@ def _make_mic_latency_result(*, status: str = "ok", phase: str = "complete") -> 
     }
 
 
-def _make_live_runtime_result(*, status: str = "ok") -> dict:
+def _make_live_runtime_result(*, status: str = "ok", execution_kind: str = "cpu") -> dict:
     return {
         "source": {
             "kind": "mp3",
@@ -147,6 +149,7 @@ def _make_live_runtime_result(*, status: str = "ok") -> dict:
         "metadata": {
             "device_requested": "cpu",
             "device_used": "cpu",
+            "execution_kind": execution_kind,
             "mode": "smoke",
             "clock_source": "ingest",
             "clock_fallback": False,
@@ -230,12 +233,65 @@ def test_assembler_builds_manifest_with_ordered_phases_and_provenance(bundle_dir
     }
     assert manifest["phases"][0]["summary"]["pass"] is True
     assert manifest["phases"][1]["summary"]["throughput_chunks_per_second"] == pytest.approx(0.444444)
+    assert manifest["phases"][1]["summary"]["execution_kind"] == "cpu"
     assert manifest["phases"][2]["summary"]["capture_latency_ms"] == pytest.approx(321.654)
+    assert manifest["phases"][2]["summary"]["execution_kind"] == "cpu"
     assert manifest["phases"][3]["summary"]["health_state"] == "healthy"
+    assert manifest["phases"][3]["summary"]["execution_kind"] == "cpu"
+    assert manifest["execution_kinds"] == {
+        "throughput": "cpu",
+        "mic_latency": "cpu",
+        "live_runtime": "cpu",
+    }
     assert manifest["phases"][4]["server_started"] is True
     assert manifest["phases"][4]["pytest_passed"] is True
     assert "compare-demo: serving" in manifest["phases"][4]["server_excerpt"]
     assert "2 passed" in manifest["phases"][4]["pytest_excerpt"]
+
+
+def test_assembler_preserves_measured_execution_kind_labels(bundle_dir: Path) -> None:
+    eval_path = bundle_dir / "eval" / "summary-smoke.json"
+    throughput_path = bundle_dir / "bench" / "live-throughput" / "live_throughput_result.json"
+    mic_path = bundle_dir / "bench" / "mic-latency" / "mic_latency_result.json"
+    live_path = bundle_dir / "live" / "live_runtime_result.json"
+    server_log = bundle_dir / "compare" / "server.log"
+    pytest_log = bundle_dir / "compare" / "pytest.log"
+    manifest_path = bundle_dir / "capstone_evidence_manifest.json"
+
+    _write_json(eval_path, _make_eval_summary())
+    _write_json(throughput_path, _make_throughput_result(execution_kind="gpu_pytorch"))
+    _write_json(mic_path, _make_mic_latency_result(execution_kind="cpu"))
+    _write_json(live_path, _make_live_runtime_result(execution_kind="tensorrt"))
+    _write_compare_logs(server_log, pytest_log)
+
+    proc = _run_assembler(
+        "--output",
+        str(manifest_path),
+        "--evaluation-summary",
+        str(eval_path),
+        "--throughput-artifact",
+        str(throughput_path),
+        "--mic-latency-artifact",
+        str(mic_path),
+        "--live-runtime-artifact",
+        str(live_path),
+        "--compare-server-log",
+        str(server_log),
+        "--compare-pytest-log",
+        str(pytest_log),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    manifest = _load_json(manifest_path)
+
+    assert manifest["execution_kinds"] == {
+        "throughput": "gpu_pytorch",
+        "mic_latency": "cpu",
+        "live_runtime": "tensorrt",
+    }
+    assert manifest["phases"][1]["summary"]["execution_kind"] == "gpu_pytorch"
+    assert manifest["phases"][2]["summary"]["execution_kind"] == "cpu"
+    assert manifest["phases"][3]["summary"]["execution_kind"] == "tensorrt"
 
 
 def test_assembler_preserves_embedded_failure_states_without_hiding_them(bundle_dir: Path) -> None:

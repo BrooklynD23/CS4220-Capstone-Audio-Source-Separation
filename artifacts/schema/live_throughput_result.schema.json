@@ -65,6 +65,10 @@
       "type": "string",
       "enum": ["cpu", "gpu"]
     },
+    "execution_kind": {
+      "type": "string",
+      "enum": ["cpu", "gpu_pytorch", "tensorrt"]
+    },
     "source_mode": {
       "type": "string",
       "enum": ["mp3", "video-audio", "mic"]

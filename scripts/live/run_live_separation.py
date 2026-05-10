@@ -33,7 +33,7 @@ from live_runtime.source_ingest import (
     build_mp3_source_descriptor,
     build_source_ingest,
 )
-from live_runtime.stem_router import StemRoutingError, resolve_live_stem_routing, write_live_stems
+from live_runtime.stem_router import StemRoutingError, resolve_live_stem_routing, write_live_stems, write_live_stems_from_arrays
 from live_runtime.video_ingest import build_video_source_descriptor
 
 DEFAULT_MP3_INPUT_PATH = PROJECT_ROOT / "fixtures/audio/demo_mix.mp3"
@@ -66,6 +66,24 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _load_umx_runtime() -> Any:
+    try:
+        from live_runtime import umx_separator
+    except ImportError as exc:  # pragma: no cover - depends on optional runtime extra
+        raise RuntimeError(
+            "Full mode requires optional GPU dependencies: numpy, torch, torchaudio, openunmix. "
+            "Install the project with the gpu extra and rerun with --mode full."
+        ) from exc
+
+    if not umx_separator.is_available():
+        raise RuntimeError(
+            "Full mode requires optional GPU dependencies: torch, torchaudio, openunmix. "
+            "Install the project with the gpu extra and rerun with --mode full."
+        )
+
+    return umx_separator
 
 
 def _resolve_input_path(source_mode: str, input_path: Path | None) -> Path:
@@ -277,6 +295,42 @@ def _build_artifact(
         return payload, 1, None
 
     routing = resolve_live_stem_routing(output_dir)
+
+    infer_ms_real: float | None = None
+    separation_result = None
+    if mode == "full":
+        try:
+            umx_runtime = _load_umx_runtime()
+            actual_device = umx_runtime.resolve_device(device_requested)
+            separator = umx_runtime.load_umxhq_separator(actual_device)
+            audio_tensor = umx_runtime.pcm_to_tensor(ingest.decoded_audio.pcm)
+            separation_result = umx_runtime.separate_tensor(
+                audio_tensor,
+                ingest.decoded_audio.sample_rate_hz,
+                separator,
+                actual_device,
+            )
+            infer_ms_real = separation_result.timings.infer_ms
+            device_used = "gpu" if actual_device == "cuda" else actual_device
+        except Exception as exc:
+            payload = _build_failure_payload(
+                source=source_descriptor,
+                input_reference=mic_device if source_mode == "mic" else str(resolved_input),
+                output_dir=output_dir,
+                sample_rate_hz=sample_rate_hz,
+                chunk_duration_s=chunk_duration_s,
+                device_requested=device_requested,
+                device_used=device_used,
+                mode=mode,
+                requested_model_path=model_resolution.requested_model_path,
+                model_path=model_resolution.model_path,
+                fallback_applied=model_resolution.fallback_applied,
+                error_stage="model_load_failed",
+                error_message=str(exc),
+            )
+            validate_live_runtime_result(payload)
+            return payload, 1, None
+
     result: LiveRuntimeResult = build_live_runtime_result(
         ingest,
         chunk_duration_s=chunk_duration_s,
@@ -288,11 +342,12 @@ def _build_artifact(
         mode=mode,
         model_path=model_resolution.requested_model_path,
         stem_routing=routing,
+        infer_ms_override=infer_ms_real,
     )
 
     payload = result.to_dict()
     validate_live_runtime_result(payload)
-    return payload, 0, ingest
+    return payload, 0, (ingest, separation_result)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -397,11 +452,11 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output_dir)
 
     result_payload: dict[str, Any] | None = None
-    ingest_envelope: SourceIngestEnvelope | None = None
+    ingest_result = None
     exit_code = 0
 
     try:
-        result_payload, exit_code, ingest_envelope = _build_artifact(
+        result_payload, exit_code, ingest_result = _build_artifact(
             source_mode=str(args.source_mode),
             input_path=input_path,
             output_dir=output_dir,
@@ -419,9 +474,17 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         if exit_code == 0:
-            if ingest_envelope is None:
-                raise RuntimeError("ingest envelope missing for successful live run")
-            write_live_stems(ingest_envelope, output_dir)
+            if ingest_result is None:
+                raise RuntimeError("ingest result missing for successful live run")
+            ingest_envelope, separation_result = ingest_result if isinstance(ingest_result, tuple) else (ingest_result, None)
+            if separation_result is not None and separation_result.stems:
+                write_live_stems_from_arrays(
+                    separation_result.stems,
+                    output_dir,
+                    separation_result.sample_rate_hz,
+                )
+            else:
+                write_live_stems(ingest_envelope, output_dir)
             _write_json_atomic(artifact_path, result_payload)
             print(f"live_runtime_artifact: {artifact_path}")
             print(f"live_stems: {output_dir / 'vocals.wav'} {output_dir / 'drums.wav'} {output_dir / 'bass.wav'} {output_dir / 'other.wav'}")

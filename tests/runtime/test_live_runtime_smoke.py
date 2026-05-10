@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.abc
+import importlib.util
 import json
 import subprocess
 import sys
@@ -16,6 +18,13 @@ UNSUPPORTED_MODEL_PATH = "artifacts/models/unsupported-live.pt"
 SCHEMA_PATH = PROJECT_ROOT / "artifacts/schema/live_runtime_result.schema.json"
 
 
+class _BlockedUmxImport(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname: str, path: object | None, target: object | None = None) -> object | None:
+        if fullname == "live_runtime.umx_separator":
+            raise AssertionError("smoke CLI import must not import live_runtime.umx_separator")
+        return None
+
+
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     command = [sys.executable, str(CLI_SCRIPT), *args]
     return subprocess.run(command, capture_output=True, text=True, check=False)
@@ -23,6 +32,58 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 def _load_json(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_live_cli_module_import_does_not_import_optional_umx_runtime(monkeypatch) -> None:
+    monkeypatch.delitem(sys.modules, "live_runtime.umx_separator", raising=False)
+    blocker = _BlockedUmxImport()
+    sys.meta_path.insert(0, blocker)
+    try:
+        spec = importlib.util.spec_from_file_location("run_live_separation_import_guard", CLI_SCRIPT)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.meta_path.remove(blocker)
+
+
+def test_live_cli_full_mode_reports_missing_umx_runtime_as_actionable_artifact(monkeypatch, tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location("run_live_separation_full_guard", CLI_SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def _raise_missing_runtime():
+        raise RuntimeError("Full mode requires optional GPU dependencies: torch, torchaudio, openunmix.")
+
+    monkeypatch.setattr(module, "_load_umx_runtime", _raise_missing_runtime)
+
+    output_dir = tmp_path / "full-missing-runtime"
+    payload, exit_code, ingest = module._build_artifact(
+        source_mode="mp3",
+        input_path=FIXTURE_MP3,
+        output_dir=output_dir,
+        sample_rate_hz=22050,
+        chunk_duration_s=0.5,
+        max_queue_depth=64,
+        decode_timeout_s=30.0,
+        device_requested="gpu",
+        device_used="cpu",
+        mode="full",
+        model_path=DEFAULT_MODEL_PATH,
+        mic_backend="fake",
+        mic_device="fixture:mic-demo",
+        capture_duration_s=1.0,
+    )
+
+    assert exit_code == 1
+    assert ingest is None
+    assert payload["status"] == "error"
+    assert payload["error_stage"] == "model_load_failed"
+    assert "optional GPU dependencies" in str(payload["error_message"])
+    assert payload["metadata"]["mode"] == "full"
 
 
 def test_live_cli_smoke_writes_schema_valid_runtime_artifact_and_four_stems(tmp_path: Path) -> None:

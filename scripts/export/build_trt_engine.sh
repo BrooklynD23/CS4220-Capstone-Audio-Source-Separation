@@ -40,19 +40,25 @@ write_log() {
   local ts
   ts="$(now_iso)"
   mkdir -p "$(dirname "$LOG_PATH")"
-  cat >"$LOG_PATH" <<EOF
-{
-  "timestamp": "$ts",
-  "status": "$status",
-  "error_stage": ${stage:+"$stage"},
-  "error_message": ${message:+"$message"},
-  "onnx": "$ONNX_PATH",
-  "engine": "$ENGINE_PATH",
-  "timing_cache": "$TIMING_CACHE",
-  "fp16": $([[ "$FP16" -eq 1 ]] && echo true || echo false),
-  "dry_run": $([[ "$DRY_RUN" -eq 1 ]] && echo true || echo false)
+  python - "$LOG_PATH" "$ts" "$status" "$stage" "$message" "$ONNX_PATH" "$ENGINE_PATH" "$TIMING_CACHE" "$FP16" "$DRY_RUN" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {
+    "timestamp": sys.argv[2],
+    "status": sys.argv[3],
+    "error_stage": sys.argv[4] or None,
+    "error_message": sys.argv[5] or None,
+    "onnx": sys.argv[6],
+    "engine": sys.argv[7],
+    "timing_cache": sys.argv[8],
+    "fp16": sys.argv[9] == "1",
+    "dry_run": sys.argv[10] == "1",
 }
-EOF
+path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 }
 
 validate_profile() {

@@ -51,6 +51,15 @@ def _ensure_child_path(output_dir: Path, artifact_path: Path, label: str) -> Non
         raise ValueError(f"{label} must live inside output_dir: {artifact_path} (output_dir={output_dir})")
 
 
+def _execution_kind(device_used: str, model_path: str) -> str:
+    model_path_lower = model_path.lower()
+    if "tensorrt" in model_path_lower or model_path_lower.endswith(".engine"):
+        return "tensorrt"
+    if device_used == "gpu":
+        return "gpu_pytorch"
+    return "cpu"
+
+
 def _build_live_command(
     *,
     output_dir: Path,
@@ -125,6 +134,7 @@ def _build_result_payload(
     max_capture_latency_ms: float | None,
     live_timeout_s: float,
     live_command: list[str],
+    execution_kind: str,
 ) -> dict[str, Any]:
     end_to_end_latency_ms = max(0.0, end_to_end_latency_ms)
     if capture_latency_ms is not None:
@@ -139,6 +149,7 @@ def _build_result_payload(
         "end_to_end_latency_ms": round(end_to_end_latency_ms, 6),
         "device_requested": device_requested,
         "device_used": device_used,
+        "execution_kind": execution_kind,
         "status": status,
         "phase": phase,
         "error_stage": error_stage,
@@ -210,6 +221,7 @@ def _build_failure_payload(
         max_capture_latency_ms=max_capture_latency_ms,
         live_timeout_s=live_timeout_s,
         live_command=live_command,
+        execution_kind=_execution_kind(device_used, live_command[live_command.index("--model-path") + 1] if "--model-path" in live_command else DEFAULT_MODEL_PATH),
     )
 
 
@@ -596,6 +608,7 @@ def run_mic_latency_benchmark(
         max_capture_latency_ms=max_capture_latency_ms,
         live_timeout_s=live_timeout_s,
         live_command=live_command,
+        execution_kind=_execution_kind(device_used, model_path),
     )
     _write_json(artifact_path, result_payload)
 
