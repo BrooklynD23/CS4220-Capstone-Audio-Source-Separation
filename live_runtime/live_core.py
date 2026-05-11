@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 import time
 
 from .contracts import (
@@ -10,7 +11,6 @@ from .contracts import (
     HealthTelemetry,
     LiveRuntimeMetadata,
     LiveRuntimeResult,
-    SourceDescriptor,
     StageTimings,
     StemRouting,
 )
@@ -25,6 +25,7 @@ DEFAULT_DRUMS_PATH = "artifacts/live/smoke/drums.wav"
 DEFAULT_BASS_PATH = "artifacts/live/smoke/bass.wav"
 DEFAULT_OTHER_PATH = "artifacts/live/smoke/other.wav"
 MAX_SUPPORTED_CHUNK_DURATION_S = 30.0
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -140,8 +141,13 @@ def build_live_runtime_result(
     mode: str = "smoke",
     model_path: str = DEFAULT_MODEL_PATH,
     stem_routing: StemRouting | None = None,
+    infer_ms_override: float | None = None,
 ) -> LiveRuntimeResult:
-    """Compose the live runtime artifact from a pre-decoded source envelope."""
+    """Compose the live runtime artifact from a pre-decoded source envelope.
+
+    Pass infer_ms_override to record real GPU inference time instead of the
+    default near-zero stub timings.
+    """
 
     _validate_chunk_duration(chunk_duration_s)
     _ = target_sample_rate_hz, decode_timeout_s  # preserved for caller compatibility
@@ -169,7 +175,23 @@ def build_live_runtime_result(
             other_path=DEFAULT_OTHER_PATH,
         )
 
-    return LiveRuntimeResult(
+    effective_infer_ms = infer_ms_override if infer_ms_override is not None else chunk_ms
+    effective_total_ms = round(source_ingest.ingest_ms + effective_infer_ms + telemetry_ms, 6)
+
+    _log.info("live separation start source=%s mode=%s", source_ingest.source.reference, mode)
+    health = _build_health_telemetry(
+        error_stage=None,
+        error_message=None,
+        requested_model_path=model_resolution.requested_model_path,
+        model_path=model_resolution.model_path,
+        fallback_applied=model_resolution.fallback_applied,
+        queue_depth=queue_depth,
+        drop_count=drop_count,
+    )
+    if health.health_state in {"degraded", "fallback"}:
+        _log.warning("live runtime health %s: %s", health.health_state, health.health_reason)
+
+    result = LiveRuntimeResult(
         source=source_ingest.source,
         chunk_input=ChunkInput(
             input=source_ingest.source.reference,
@@ -179,9 +201,9 @@ def build_live_runtime_result(
         ),
         stage_timings=StageTimings(
             stft_ms=source_ingest.ingest_ms,
-            infer_ms=chunk_ms,
+            infer_ms=effective_infer_ms,
             istft_ms=telemetry_ms,
-            total_ms=round(source_ingest.ingest_ms + chunk_ms + telemetry_ms, 6),
+            total_ms=effective_total_ms,
         ),
         stem_routing=stem_routing,
         failure_state=_build_failure_state(
@@ -189,15 +211,7 @@ def build_live_runtime_result(
             error_stage=None,
             error_message=None,
         ),
-        health=_build_health_telemetry(
-            error_stage=None,
-            error_message=None,
-            requested_model_path=model_resolution.requested_model_path,
-            model_path=model_resolution.model_path,
-            fallback_applied=model_resolution.fallback_applied,
-            queue_depth=queue_depth,
-            drop_count=drop_count,
-        ),
+        health=health,
         telemetry=LiveRuntimeMetadata(
             device_requested=device_requested,  # type: ignore[arg-type]
             device_used=device_used,  # type: ignore[arg-type]
@@ -213,3 +227,9 @@ def build_live_runtime_result(
             model_path=model_resolution.model_path,
         ),
     )
+    _log.info(
+        "live separation complete source=%s total_ms=%.6f",
+        source_ingest.source.reference,
+        effective_total_ms,
+    )
+    return result

@@ -148,6 +148,16 @@ def test_mic_source_ingest_with_fake_backend_preserves_source_metadata_in_live_r
     assert payload["metadata"]["mode"] == "smoke"
 
 
+@pytest.mark.parametrize("capture_timeout_s", [0.0, -1.0])
+def test_mic_source_ingest_rejects_non_positive_capture_timeout(capture_timeout_s: float) -> None:
+    with pytest.raises(ValueError, match="capture_timeout_s"):
+        build_mic_source_ingest(
+            "fixture:mic-demo",
+            backend=FakeMicCaptureBackend(),
+            capture_timeout_s=capture_timeout_s,
+        )
+
+
 def test_video_audio_ingest_rejects_corrupt_video_media(tmp_path: Path) -> None:
     corrupt_video = tmp_path / "corrupt.mp4"
     corrupt_video.write_bytes(b"not a video")

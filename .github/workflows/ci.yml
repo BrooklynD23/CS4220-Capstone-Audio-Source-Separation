@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.11']
+        python-version: ['3.10', '3.11', '3.12']
 
     steps:
       - name: Checkout repository
@@ -26,5 +26,16 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Install Playwright
+        run: pip install playwright==1.54.0 && playwright install chromium
+
+      - name: Lint
+        run: pip install ruff && ruff check .
+
       - name: Test with pytest
-        run: pytest --tb=short
+        run: pytest --cov=live_runtime --cov=scripts --cov-report=term-missing --cov-fail-under=80 --tb=short
+
+      - name: Verify contracts (dry-run)
+        run: |
+          bash scripts/verify/s01_check.sh --dry-run
+          bash scripts/verify/s02_check.sh --dry-run

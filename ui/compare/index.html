@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Compare Demo</title>
     <link rel="stylesheet" href="./styles.css" />
-    <script defer src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
+        <a href="/ui/demo/" style="display:inline-block;margin-bottom:0.75rem;color:#8ee3ff;font-size:0.875rem;text-decoration:none;">→ Live Demo</a>
         <p class="eyebrow">Live runtime compare shell</p>
         <h1>Persisted artifact compare</h1>
         <p class="lede">
@@ -35,6 +36,114 @@
 
         <p id="file-hint" class="hint">Expected shape: persisted live runtime JSON from the separation run.</p>
         <p id="selected-file" class="selected-file" data-testid="selected-file">No file selected</p>
+      </section>
+
+      <section class="artifact-grid" aria-label="Evidence and waveform loaders">
+        <section class="controls card" aria-labelledby="benchmark-heading">
+          <div class="section-heading">
+            <h2 id="benchmark-heading">Benchmark evidence</h2>
+            <p>Load a benchmark result or final evidence manifest.</p>
+          </div>
+
+          <div class="control-row">
+            <label class="file-picker" for="benchmark-file">
+              <span class="file-picker-label">Evidence JSON</span>
+              <input id="benchmark-file" name="benchmark-file" type="file" accept="application/json,.json" />
+            </label>
+            <button id="load-benchmark-button" type="button" class="primary-button">Load benchmark</button>
+          </div>
+
+          <dl class="compare-metrics benchmark-metrics">
+            <div>
+              <dt>CPU kind</dt>
+              <dd id="benchmark-kind-cpu" data-testid="benchmark-kind-cpu">—</dd>
+            </div>
+            <div>
+              <dt>Accelerated kind</dt>
+              <dd id="benchmark-kind-gpu" data-testid="benchmark-kind-gpu">—</dd>
+            </div>
+            <div>
+              <dt>CPU chunk</dt>
+              <dd id="benchmark-cpu-ms" data-testid="benchmark-cpu-ms">—</dd>
+            </div>
+            <div>
+              <dt>Accelerated chunk</dt>
+              <dd id="benchmark-gpu-ms" data-testid="benchmark-gpu-ms">—</dd>
+            </div>
+            <div>
+              <dt>Measured delta</dt>
+              <dd id="benchmark-delta" data-testid="benchmark-delta">—</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="controls card" aria-labelledby="audio-heading">
+          <div class="section-heading">
+            <h2 id="audio-heading">Waveform assets</h2>
+            <p>Load the source WAV and the four generated WAV stems.</p>
+          </div>
+
+          <div class="control-row">
+            <label class="file-picker" for="input-audio-file">
+              <span class="file-picker-label">Input WAV</span>
+              <input id="input-audio-file" name="input-audio-file" type="file" accept="audio/wav,.wav" />
+            </label>
+            <label class="file-picker" for="stem-audio-files">
+              <span class="file-picker-label">Stem WAV files</span>
+              <input id="stem-audio-files" name="stem-audio-files" type="file" accept="audio/wav,.wav" multiple />
+            </label>
+            <button id="load-audio-button" type="button" class="primary-button">Load WAVs</button>
+          </div>
+          <p id="audio-file-count" class="selected-file" data-testid="audio-file-count">No audio files loaded</p>
+        </section>
+      </section>
+
+      <section class="card waveform-panel" aria-labelledby="waveform-heading">
+        <div class="section-heading">
+          <h2 id="waveform-heading">Waveform lanes</h2>
+          <p>Browser-rendered lanes for the loaded source and canonical stems.</p>
+        </div>
+        <div class="waveform-grid">
+          <article class="waveform-lane">
+            <span>Input</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-input" data-testid="waveform-canvas-input" width="640" height="96"></canvas>
+              <canvas id="spectrogram-input" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+          </article>
+          <article class="waveform-lane">
+            <span>Vocals</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-vocals" data-testid="waveform-canvas-vocals" width="640" height="96"></canvas>
+              <canvas id="spectrogram-vocals" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+          </article>
+          <article class="waveform-lane">
+            <span>Drums</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-drums" data-testid="waveform-canvas-drums" width="640" height="96"></canvas>
+              <canvas id="spectrogram-drums" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+          </article>
+          <article class="waveform-lane">
+            <span>Bass</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-bass" data-testid="waveform-canvas-bass" width="640" height="96"></canvas>
+              <canvas id="spectrogram-bass" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+          </article>
+          <article class="waveform-lane">
+            <span>Other</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-other" data-testid="waveform-canvas-other" width="640" height="96"></canvas>
+              <canvas id="spectrogram-other" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+          </article>
+        </div>
+        <div class="playback-controls">
+          <button id="playback-toggle" type="button" class="mode-button" data-testid="playback-toggle" aria-pressed="false">Play</button>
+          <span id="playback-state" data-testid="playback-state">stopped</span>
+        </div>
       </section>
 
       <section id="banner-region" aria-live="polite" aria-atomic="true">

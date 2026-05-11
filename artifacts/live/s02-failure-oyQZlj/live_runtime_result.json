@@ -1,0 +1,46 @@
+{
+  "chunk_duration_s": 0.5,
+  "chunk_index": 0,
+  "drop_count": 0,
+  "error_message": "Input audio file not found: fixtures/audio/missing.mp3",
+  "error_stage": "decode_failed",
+  "fallback_applied": false,
+  "health_reason": "Input audio file not found: fixtures/audio/missing.mp3",
+  "health_state": "degraded",
+  "infer_ms": 0.0,
+  "input": "fixtures/audio/missing.mp3",
+  "istft_ms": 0.0,
+  "metadata": {
+    "channels": 0,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 0,
+    "samples_processed": 0,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 0,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/missing.mp3"
+  },
+  "status": "error",
+  "stem_paths": {
+    "bass": "artifacts/live/s02-failure-oyQZlj/bass.wav",
+    "drums": "artifacts/live/s02-failure-oyQZlj/drums.wav",
+    "other": "artifacts/live/s02-failure-oyQZlj/other.wav",
+    "vocals": "artifacts/live/s02-failure-oyQZlj/vocals.wav"
+  },
+  "stft_ms": 0.0,
+  "timestamp": "2026-05-10T02:19:25.534134+00:00",
+  "total_ms": 0.0
+}

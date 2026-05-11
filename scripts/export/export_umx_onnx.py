@@ -141,12 +141,31 @@ def _run_export(
         ) from exc
 
     if model_path is not None:
-        module = torch.load(model_path, map_location="cpu")
+        module = torch.load(model_path, map_location="cpu", weights_only=False)
         if hasattr(module, "eval"):
             module = module.eval()
     else:
-        # Fallback identity module for environments without a checkpoint path.
-        module = nn.Identity().eval()
+        try:
+            import openunmix
+            import openunmix.utils as _umx_utils
+
+            _sep = openunmix.umxhq(targets=["vocals"], device="cpu", pretrained=True)
+            _sep.freeze()
+
+            class _UMXVocalsWrapper(nn.Module):
+                def __init__(self, sep: nn.Module) -> None:
+                    super().__init__()
+                    self.sep = sep
+
+                def forward(self, x: torch.Tensor) -> torch.Tensor:
+                    audio_prep = _umx_utils.preprocess(x, 44100, 44100)
+                    raw = self.sep(audio_prep)
+                    result = self.sep.to_dict(raw)
+                    return result.get("vocals", next(iter(result.values())))
+
+            module = _UMXVocalsWrapper(_sep).eval()
+        except Exception:
+            module = nn.Identity().eval()
 
     batch, channels, samples = input_shape
     dummy = torch.randn(batch, channels, samples, dtype=torch.float32)

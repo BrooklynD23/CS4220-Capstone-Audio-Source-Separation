@@ -8,7 +8,7 @@ import pytest
 
 try:
     import yaml
-except ModuleNotFoundError as exc:  # pragma: no cover - only hits on broken envs
+except ModuleNotFoundError:  # pragma: no cover - only hits on broken envs
     pytest.fail(
         "Missing dependency 'pyyaml'. Install project deps first (e.g. `pip install -e .[dev]`).",
         pytrace=False,

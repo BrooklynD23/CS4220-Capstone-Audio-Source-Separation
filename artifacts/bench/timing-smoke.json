@@ -2,9 +2,9 @@
   "chunk_duration_s": 10.0,
   "error_message": null,
   "error_stage": null,
-  "infer_ms": 6.847211,
+  "infer_ms": 7.871825,
   "input": "fixtures/audio/10s_mix.wav",
-  "istft_ms": 3.651846,
+  "istft_ms": 4.198306,
   "metadata": {
     "channels": 1,
     "clock_fallback": false,
@@ -22,7 +22,7 @@
   },
   "sample_rate_hz": 44100,
   "status": "ok",
-  "stft_ms": 3.195365,
-  "timestamp": "2026-04-21T00:16:15.543690+00:00",
-  "total_ms": 13.694422
+  "stft_ms": 3.673518,
+  "timestamp": "2026-05-10T02:19:29.407254+00:00",
+  "total_ms": 15.743649
 }

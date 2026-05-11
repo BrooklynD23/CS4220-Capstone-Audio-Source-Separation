@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import site
 import subprocess
@@ -9,6 +10,7 @@ from typing import Final
 
 DEFAULT_TARGET_SAMPLE_RATE_HZ: Final[int] = 44100
 DEFAULT_DECODE_TIMEOUT_S: Final[float] = 30.0
+_log = logging.getLogger(__name__)
 
 
 def _resolve_ffmpeg_executable() -> Path:
@@ -100,6 +102,8 @@ def _decode_source_pcm_bytes(
     target_sample_rate_hz: int,
     decode_timeout_s: float,
 ) -> bytes:
+    if decode_timeout_s <= 0:
+        raise ValueError(f"decode_timeout_s must be positive, got {decode_timeout_s}")
     if not source_path.exists():
         raise FileNotFoundError(f"Input audio file not found: {source_path}")
 
@@ -129,6 +133,7 @@ def _decode_source_pcm_bytes(
             timeout=decode_timeout_s,
         )
     except subprocess.TimeoutExpired as exc:
+        _log.warning("decode timeout for %s after %.3fs", source_path, decode_timeout_s)
         raise DecodeTimeoutError(
             error_stage="decode_timeout",
             source_path=source_path,
@@ -142,6 +147,7 @@ def _decode_source_pcm_bytes(
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()
         if not stderr:
             stderr = "ffmpeg returned a non-zero exit code without stderr output"
+        _log.error("decode failed for %s: %s", source_path, stderr)
         raise DecodeFailedError(
             error_stage="decode_failed",
             source_path=source_path,

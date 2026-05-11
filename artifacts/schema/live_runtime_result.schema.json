@@ -184,6 +184,10 @@
           "type": "string",
           "enum": ["cpu", "gpu"]
         },
+        "execution_kind": {
+          "type": "string",
+          "enum": ["cpu", "gpu_pytorch", "tensorrt"]
+        },
         "mode": {
           "type": "string",
           "enum": ["smoke", "full"]

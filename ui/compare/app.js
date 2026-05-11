@@ -1,3 +1,5 @@
+import { decodePcmWav, drawWaveform, drawSpectrogram } from '../shared/audio-render.js';
+
 const MODE_CONFIG = {
   'side-by-side': {
     title: 'Side-by-side',
@@ -25,6 +27,33 @@ const STAGE_NOTES = {
 const elements = {
   fileInput: document.getElementById('artifact-file'),
   loadButton: document.getElementById('load-button'),
+  benchmarkFileInput: document.getElementById('benchmark-file'),
+  loadBenchmarkButton: document.getElementById('load-benchmark-button'),
+  benchmarkKindCpu: document.getElementById('benchmark-kind-cpu'),
+  benchmarkKindGpu: document.getElementById('benchmark-kind-gpu'),
+  benchmarkCpuMs: document.getElementById('benchmark-cpu-ms'),
+  benchmarkGpuMs: document.getElementById('benchmark-gpu-ms'),
+  benchmarkDelta: document.getElementById('benchmark-delta'),
+  inputAudioFile: document.getElementById('input-audio-file'),
+  stemAudioFiles: document.getElementById('stem-audio-files'),
+  loadAudioButton: document.getElementById('load-audio-button'),
+  audioFileCount: document.getElementById('audio-file-count'),
+  waveformCanvases: {
+    input: document.getElementById('waveform-input'),
+    vocals: document.getElementById('waveform-vocals'),
+    drums: document.getElementById('waveform-drums'),
+    bass: document.getElementById('waveform-bass'),
+    other: document.getElementById('waveform-other'),
+  },
+  spectrogramCanvases: {
+    input: document.getElementById('spectrogram-input'),
+    vocals: document.getElementById('spectrogram-vocals'),
+    drums: document.getElementById('spectrogram-drums'),
+    bass: document.getElementById('spectrogram-bass'),
+    other: document.getElementById('spectrogram-other'),
+  },
+  playbackToggle: document.getElementById('playback-toggle'),
+  playbackState: document.getElementById('playback-state'),
   selectedFile: document.getElementById('selected-file'),
   errorBanner: document.getElementById('error-banner'),
   statusBanner: document.getElementById('status-banner'),
@@ -83,11 +112,13 @@ const compareState = {
   artifactToken: '—',
   activeMode: 'side-by-side',
   lastModeMessage: 'Awaiting a loaded artifact.',
+  audioElement: null,
 };
 
 window.__compareState = compareState;
 window.__setCompareMode = setCompareMode;
 window.__loadCompareArtifact = loadArtifactFromFile;
+window.__loadCompareArtifactFromUrl = loadArtifactFromUrl;
 
 const emptyState = {
   source: { kind: '—', label: '—', reference: '—', metadata: '—' },
@@ -215,6 +246,14 @@ function setEmptyState() {
   syncModeButtons();
 }
 
+function setEmptyBenchmarkState() {
+  setText(elements.benchmarkKindCpu, '—');
+  setText(elements.benchmarkKindGpu, '—');
+  setText(elements.benchmarkCpuMs, '—');
+  setText(elements.benchmarkGpuMs, '—');
+  setText(elements.benchmarkDelta, '—');
+}
+
 function renderStages(stages, stageTimings = {}) {
   elements.stagesList.innerHTML = '';
   const normalizedStages = stages.length > 0 ? stages : ['—'];
@@ -280,6 +319,152 @@ function expectBoolean(value, path) {
     throw new Error(`${path} must be a boolean`);
   }
   return value;
+}
+
+function maybeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function phaseSummary(phase) {
+  if (!phase || typeof phase !== 'object') {
+    return null;
+  }
+  const summary = phase.summary && typeof phase.summary === 'object' ? phase.summary : phase;
+  const executionKind = summary.execution_kind || phase.execution_kind;
+  const msPerChunk = maybeNumber(summary.wall_clock_ms_per_chunk);
+  const throughput = maybeNumber(summary.throughput_chunks_per_second);
+  if (typeof executionKind !== 'string' || msPerChunk === null) {
+    return null;
+  }
+  return { executionKind, msPerChunk, throughput };
+}
+
+function normalizeBenchmarkPayload(payload) {
+  const root = expectObject(payload, 'benchmark artifact');
+  const candidates = [];
+
+  if (Array.isArray(root.phases)) {
+    root.phases.forEach((phase) => {
+      const candidate = phaseSummary(phase);
+      if (candidate) {
+        candidates.push(candidate);
+      }
+    });
+  } else {
+    const candidate = phaseSummary(root);
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  if (candidates.length === 0) {
+    throw new Error('benchmark artifact must contain throughput summaries with execution_kind and wall_clock_ms_per_chunk');
+  }
+
+  const cpu = candidates.find((candidate) => candidate.executionKind === 'cpu') || candidates[0];
+  const accelerated = candidates.find((candidate) => candidate.executionKind !== 'cpu') || cpu;
+  const delta = accelerated.msPerChunk > 0 ? cpu.msPerChunk / accelerated.msPerChunk : 0;
+  return { cpu, accelerated, delta };
+}
+
+function renderBenchmarkComparison(comparison) {
+  setText(elements.benchmarkKindCpu, comparison.cpu.executionKind);
+  setText(elements.benchmarkKindGpu, comparison.accelerated.executionKind);
+  setText(elements.benchmarkCpuMs, `${comparison.cpu.msPerChunk.toFixed(2)} ms`);
+  setText(elements.benchmarkGpuMs, `${comparison.accelerated.msPerChunk.toFixed(2)} ms`);
+  setText(elements.benchmarkDelta, `${comparison.delta.toFixed(2)}x`);
+}
+
+async function loadBenchmarkFromFile() {
+  const file = elements.benchmarkFileInput.files?.[0];
+  if (!file) {
+    setEmptyBenchmarkState();
+    setBanner('Select a benchmark JSON artifact before loading.', { type: 'error' });
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(await file.text());
+    const comparison = normalizeBenchmarkPayload(payload);
+    renderBenchmarkComparison(comparison);
+    setBanner(`Loaded benchmark evidence ${file.name}.`, { type: 'status' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setBanner(`Failed to parse or validate benchmark artifact: ${message}`, { type: 'error' });
+  }
+}
+
+function stemKeyForFile(file) {
+  const name = file.name.toLowerCase();
+  return ['vocals', 'drums', 'bass', 'other'].find((stem) => name.includes(stem)) || null;
+}
+
+async function loadAudioWaveforms() {
+  const inputFile = elements.inputAudioFile.files?.[0];
+  const stemFiles = Array.from(elements.stemAudioFiles.files || []);
+  if (!inputFile || stemFiles.length < 4) {
+    setBanner('Load one input WAV and four stem WAV files.', { type: 'error' });
+    return;
+  }
+
+  try {
+    const inputSamples = decodePcmWav(await inputFile.arrayBuffer());
+    drawWaveform(elements.waveformCanvases.input, inputSamples);
+    drawSpectrogram(elements.spectrogramCanvases.input, inputSamples);
+
+    const stemsByKey = {};
+    stemFiles.forEach((file) => {
+      const key = stemKeyForFile(file);
+      if (key) {
+        stemsByKey[key] = file;
+      }
+    });
+
+    for (const key of ['vocals', 'drums', 'bass', 'other']) {
+      if (!stemsByKey[key]) {
+        throw new Error(`Missing ${key}.wav stem file`);
+      }
+      const samples = decodePcmWav(await stemsByKey[key].arrayBuffer());
+      drawWaveform(elements.waveformCanvases[key], samples);
+      drawSpectrogram(elements.spectrogramCanvases[key], samples);
+    }
+
+    if (compareState.audioElement) {
+      compareState.audioElement.pause();
+      URL.revokeObjectURL(compareState.audioElement.src);
+    }
+    compareState.audioElement = new Audio(URL.createObjectURL(inputFile));
+    compareState.audioElement.addEventListener('ended', () => {
+      setText(elements.playbackState, 'stopped');
+      setText(elements.playbackToggle, 'Play');
+      elements.playbackToggle.setAttribute('aria-pressed', 'false');
+    });
+
+    setText(elements.audioFileCount, `${1 + stemFiles.length} files`);
+    setBanner(`Loaded WAV assets for waveform inspection.`, { type: 'status' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setBanner(`Failed to load WAV assets: ${message}`, { type: 'error' });
+  }
+}
+
+function togglePlayback() {
+  const audio = compareState.audioElement;
+  if (!audio) {
+    setBanner('Load WAV assets before using playback.', { type: 'error' });
+    return;
+  }
+  if (audio.paused) {
+    audio.play();
+    setText(elements.playbackState, 'playing');
+    setText(elements.playbackToggle, 'Pause');
+    elements.playbackToggle.setAttribute('aria-pressed', 'true');
+  } else {
+    audio.pause();
+    setText(elements.playbackState, 'paused');
+    setText(elements.playbackToggle, 'Play');
+    elements.playbackToggle.setAttribute('aria-pressed', 'false');
+  }
 }
 
 function normalizeStageTimings(stageTimingsSource, stages) {
@@ -463,7 +648,7 @@ function normalizeArtifact(payload, loadedPath) {
 
 function renderArtifact(artifact) {
   compareState.artifact = artifact;
-  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp}`;
+  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp ?? '—'}`;
   setBanner(`Loaded ${artifact.loadedPath} — source ${artifact.source.kind} (${artifact.source.reference})`, {
     type: 'status',
   });
@@ -712,9 +897,7 @@ async function loadArtifactFromFile() {
   setLoading(true);
   try {
     const raw = await file.text();
-    const payload = JSON.parse(raw);
-    const artifact = normalizeArtifact(payload, file.name);
-    renderArtifact(artifact);
+    renderArtifact(normalizeArtifact(JSON.parse(raw), file.name));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!compareState.artifact) {
@@ -722,6 +905,43 @@ async function loadArtifactFromFile() {
       setEmptyState();
     }
     setBanner(`Failed to parse or validate JSON artifact: ${message}`, { type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+}
+
+function resolveArtifactUrl(artifactPath) {
+  const normalizedPath = typeof artifactPath === 'string' ? artifactPath.trim() : '';
+  if (!normalizedPath) {
+    throw new Error('artifact query parameter must be a non-empty path');
+  }
+
+  const resolvedUrl = new URL(normalizedPath, `${window.location.origin}/`);
+  if (resolvedUrl.origin !== window.location.origin) {
+    throw new Error('artifact query parameter must stay on the same local server origin');
+  }
+  return resolvedUrl;
+}
+
+async function loadArtifactFromUrl(artifactPath) {
+  const resolvedUrl = resolveArtifactUrl(artifactPath);
+  const loadedPath = resolvedUrl.pathname.replace(/^\/+/, '') || resolvedUrl.pathname;
+
+  setLoading(true);
+  try {
+    const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`artifact request failed with status ${response.status}`);
+    }
+
+    renderArtifact(normalizeArtifact(await response.json(), loadedPath));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!compareState.artifact) {
+      compareState.artifactToken = '—';
+      setEmptyState();
+    }
+    setBanner(`Failed to preload artifact: ${message}`, { type: 'error' });
   } finally {
     setLoading(false);
   }
@@ -735,12 +955,21 @@ function handleFileSelection() {
 function initialize() {
   compareState.activeMode = 'side-by-side';
   setEmptyState();
+  setEmptyBenchmarkState();
   elements.fileInput.addEventListener('change', handleFileSelection);
   elements.loadButton.addEventListener('click', loadArtifactFromFile);
+  elements.loadBenchmarkButton.addEventListener('click', loadBenchmarkFromFile);
+  elements.loadAudioButton.addEventListener('click', loadAudioWaveforms);
+  elements.playbackToggle.addEventListener('click', togglePlayback);
   elements.compareModeButtons.forEach((button) => {
     button.addEventListener('click', () => setCompareMode(button.dataset.mode));
   });
   setBanner('Awaiting a loaded artifact.', { type: 'status' });
+
+  const preloadArtifact = new URLSearchParams(window.location.search).get('artifact');
+  if (preloadArtifact) {
+    void loadArtifactFromUrl(preloadArtifact);
+  }
 }
 
 initialize();

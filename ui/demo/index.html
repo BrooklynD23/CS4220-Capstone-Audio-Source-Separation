@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Separation Demo</title>
+    <link rel="stylesheet" href="../compare/styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <a href="/ui/compare/" class="nav-back">← Compare shell</a>
+        <p class="eyebrow">Live separation demo</p>
+        <h1>MP3 → Separated Stems</h1>
+        <p class="lede">
+          Upload an audio file to run the full GPU separation pipeline and audition each isolated stem.
+        </p>
+      </header>
+
+      <!-- Step 1: Upload -->
+      <section class="controls card" aria-labelledby="upload-heading">
+        <div class="section-heading">
+          <h2 id="upload-heading">Step 1 — Upload</h2>
+          <p>Choose an audio file and click Separate to run the pipeline.</p>
+        </div>
+        <div class="control-row">
+          <label class="file-picker" for="mp3-file">
+            <span class="file-picker-label">Audio file</span>
+            <input id="mp3-file" name="mp3-file" type="file"
+              accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac,.mp3,.wav,.m4a,.ogg,.flac" />
+          </label>
+          <select id="device-select" class="device-select" aria-label="Processing device">
+            <option value="gpu">GPU</option>
+            <option value="cpu">CPU</option>
+          </select>
+          <button id="separate-btn" type="button" class="primary-button" disabled>Separate</button>
+        </div>
+        <p id="status-line" class="hint" data-testid="status-line">Awaiting file…</p>
+      </section>
+
+      <!-- Step 2: Waveform Lanes -->
+      <section id="waveform-section" class="card waveform-panel" hidden
+               aria-labelledby="waveform-heading">
+        <div class="section-heading">
+          <h2 id="waveform-heading">Step 2 — Waveform Lanes</h2>
+          <p>Waveform and spectrogram for each separated stem. Click Play to audition.</p>
+        </div>
+        <div class="waveform-grid">
+          <article class="waveform-lane demo-lane">
+            <span class="lane-label">Input</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-input" data-testid="waveform-canvas-input" width="640" height="96"></canvas>
+              <canvas id="spectrogram-input" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+            <button id="play-input" type="button" class="mode-button" disabled aria-pressed="false">Play</button>
+          </article>
+          <article class="waveform-lane demo-lane">
+            <span class="lane-label">Vocals</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-vocals" data-testid="waveform-canvas-vocals" width="640" height="96"></canvas>
+              <canvas id="spectrogram-vocals" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+            <button id="play-vocals" type="button" class="mode-button" disabled aria-pressed="false">Play</button>
+          </article>
+          <article class="waveform-lane demo-lane">
+            <span class="lane-label">Drums</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-drums" data-testid="waveform-canvas-drums" width="640" height="96"></canvas>
+              <canvas id="spectrogram-drums" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+            <button id="play-drums" type="button" class="mode-button" disabled aria-pressed="false">Play</button>
+          </article>
+          <article class="waveform-lane demo-lane">
+            <span class="lane-label">Bass</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-bass" data-testid="waveform-canvas-bass" width="640" height="96"></canvas>
+              <canvas id="spectrogram-bass" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+            <button id="play-bass" type="button" class="mode-button" disabled aria-pressed="false">Play</button>
+          </article>
+          <article class="waveform-lane demo-lane">
+            <span class="lane-label">Other</span>
+            <div class="lane-canvases">
+              <canvas id="waveform-other" data-testid="waveform-canvas-other" width="640" height="96"></canvas>
+              <canvas id="spectrogram-other" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
+            <button id="play-other" type="button" class="mode-button" disabled aria-pressed="false">Play</button>
+          </article>
+        </div>
+      </section>
+
+      <!-- Step 3: Performance Overlay -->
+      <section id="perf-section" class="card panel" hidden aria-labelledby="perf-heading">
+        <div class="section-heading">
+          <h2 id="perf-heading">Step 3 — Performance</h2>
+          <p>Stage timing from the separation run.</p>
+        </div>
+        <dl class="definition-list timing-grid">
+          <div><dt>STFT</dt><dd id="timing-stft" data-testid="timing-stft">—</dd></div>
+          <div><dt>Infer</dt><dd id="timing-infer" data-testid="timing-infer">—</dd></div>
+          <div><dt>ISTFT</dt><dd id="timing-istft" data-testid="timing-istft">—</dd></div>
+          <div><dt>Total</dt><dd id="timing-total" data-testid="timing-total">—</dd></div>
+          <div><dt>Device</dt><dd id="device-used" data-testid="device-used">—</dd></div>
+        </dl>
+      </section>
+
+      <!-- Step 4: Benchmark Table -->
+      <section id="benchmark-section" class="card" hidden aria-labelledby="benchmark-heading">
+        <div class="section-heading">
+          <h2 id="benchmark-heading">Step 4 — GPU vs CPU Benchmark</h2>
+          <p>Loaded from the capstone evidence manifest.</p>
+        </div>
+        <div id="benchmark-table-wrap" hidden>
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Backend</th>
+                <th>Chunk (ms)</th>
+                <th>Speedup</th>
+                <th>SDR</th>
+              </tr>
+            </thead>
+            <tbody id="benchmark-tbody"></tbody>
+          </table>
+        </div>
+        <p id="benchmark-unavailable" class="hint">Benchmark data unavailable.</p>
+      </section>
+
+      <section id="banner-region" aria-live="polite" aria-atomic="true">
+        <div id="error-banner" class="banner banner-error is-hidden" role="alert"
+             data-testid="error-banner"></div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import math
+import struct
 import threading
+import wave
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -78,6 +81,20 @@ def _write_temp_text_fixture(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _write_wav_fixture(path: Path, *, frequency_hz: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sample_rate = 8000
+    frames = bytearray()
+    for index in range(sample_rate // 10):
+        value = int(math.sin(2 * math.pi * frequency_hz * index / sample_rate) * 16000)
+        frames.extend(struct.pack("<h", value))
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(bytes(frames))
 
 
 def test_compare_ui_switches_modes_without_replacing_loaded_artifact(compare_server: str) -> None:
@@ -279,6 +296,94 @@ def test_compare_ui_rejects_malformed_json_without_replacing_loaded_artifact(com
         assert page.locator('[data-testid="source-kind"]').text_content() == "mp3"
         assert page.locator('[data-testid="health-state"]').text_content() == "healthy"
         assert page.locator('[data-testid="compare-stage-card"]').count() == 3
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_compare_ui_loads_evidence_manifest_and_calculates_benchmark_delta(compare_server: str, tmp_path: Path) -> None:
+    manifest_path = _write_temp_fixture(
+        tmp_path,
+        "capstone-evidence.json",
+        {
+            "status": "ok",
+            "phase": "complete",
+            "execution_kinds": {
+                "throughput_cpu": "cpu",
+                "throughput_gpu": "gpu_pytorch",
+            },
+            "phases": [
+                {
+                    "name": "throughput_cpu",
+                    "status": "ok",
+                    "summary": {
+                        "execution_kind": "cpu",
+                        "wall_clock_ms_per_chunk": 120.0,
+                        "throughput_chunks_per_second": 8.0,
+                    },
+                },
+                {
+                    "name": "throughput_gpu",
+                    "status": "ok",
+                    "summary": {
+                        "execution_kind": "gpu_pytorch",
+                        "wall_clock_ms_per_chunk": 30.0,
+                        "throughput_chunks_per_second": 32.0,
+                    },
+                },
+            ],
+        },
+    )
+
+    playwright, browser, page = _load_compare_page(compare_server)
+    try:
+        page.set_input_files("#benchmark-file", str(manifest_path))
+        page.click("#load-benchmark-button")
+        page.wait_for_function("document.querySelector('[data-testid=\"benchmark-delta\"]').textContent === '4.00x'")
+
+        assert page.locator('[data-testid="benchmark-kind-cpu"]').text_content() == "cpu"
+        assert page.locator('[data-testid="benchmark-kind-gpu"]').text_content() == "gpu_pytorch"
+        assert page.locator('[data-testid="benchmark-cpu-ms"]').text_content() == "120.00 ms"
+        assert page.locator('[data-testid="benchmark-gpu-ms"]').text_content() == "30.00 ms"
+        assert page.locator('[data-testid="benchmark-delta"]').text_content() == "4.00x"
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_compare_ui_loads_wav_stems_and_renders_waveform_lanes(compare_server: str, tmp_path: Path) -> None:
+    input_wav = tmp_path / "input.wav"
+    stem_paths = [
+        tmp_path / "vocals.wav",
+        tmp_path / "drums.wav",
+        tmp_path / "bass.wav",
+        tmp_path / "other.wav",
+    ]
+    _write_wav_fixture(input_wav, frequency_hz=220.0)
+    for offset, stem_path in enumerate(stem_paths):
+        _write_wav_fixture(stem_path, frequency_hz=330.0 + offset * 110.0)
+
+    playwright, browser, page = _load_compare_page(compare_server)
+    try:
+        page.set_input_files("#input-audio-file", str(input_wav))
+        page.set_input_files("#stem-audio-files", [str(path) for path in stem_paths])
+        page.click("#load-audio-button")
+        page.wait_for_function(
+            "Array.from(document.querySelectorAll('[data-testid^=\"waveform-canvas-\"]')).every(canvas => canvas.dataset.rendered === 'true')"
+        )
+
+        assert page.locator('[data-testid="audio-file-count"]').text_content() == "5 files"
+        for lane in ["input", "vocals", "drums", "bass", "other"]:
+            assert page.locator(f'[data-testid="waveform-canvas-{lane}"]').get_attribute("data-rendered") == "true"
+            pixel_total = page.evaluate(
+                """lane => {
+                  const canvas = document.querySelector(`[data-testid="waveform-canvas-${lane}"]`);
+                  const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+                  return Array.from(data).reduce((sum, value) => sum + value, 0);
+                }""",
+                lane,
+            )
+            assert pixel_total > 0
     finally:
         browser.close()
         playwright.stop()

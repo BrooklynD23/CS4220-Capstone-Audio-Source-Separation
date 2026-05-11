@@ -50,3 +50,10 @@ This document captures the reproducibility assumptions for evaluation, timing, a
 - Do **not** store API tokens, dataset credentials, or local secret values in artifacts.
 - Allowed host fingerprinting for this slice is limited to tool/runtime versions and GPU model strings.
 - Script failure artifacts should include `status`, `error_stage`, and timestamps for observability.
+
+## Monitoring Targets
+
+- Eval: `vocal_sdr_median_db >= 5.0`; `passes_threshold: true`.
+- Throughput: `chunks_per_sec >= 0.5`.
+- Mic end-to-end latency: `<= 2000ms`.
+- Live runtime health: `healthy`; `degraded` or `fallback` requires investigation.

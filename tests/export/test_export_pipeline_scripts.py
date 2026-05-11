@@ -5,8 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXPORT_SCRIPT = PROJECT_ROOT / "scripts/export/export_umx_onnx.py"
 BUILD_SCRIPT = PROJECT_ROOT / "scripts/export/build_trt_engine.sh"

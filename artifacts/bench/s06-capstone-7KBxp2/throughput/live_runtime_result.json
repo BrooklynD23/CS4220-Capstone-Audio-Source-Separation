@@ -1,0 +1,46 @@
+{
+  "chunk_duration_s": 1.0,
+  "chunk_index": 9,
+  "drop_count": 0,
+  "error_message": null,
+  "error_stage": null,
+  "fallback_applied": false,
+  "health_reason": "runtime operating normally",
+  "health_state": "healthy",
+  "infer_ms": 0.000556,
+  "input": "fixtures/audio/demo_mix.mp3",
+  "istft_ms": 7.2e-05,
+  "metadata": {
+    "channels": 1,
+    "clock_fallback": false,
+    "clock_source": "ingest",
+    "device_requested": "cpu",
+    "device_used": "cpu",
+    "mode": "smoke",
+    "sample_width_bytes": 2,
+    "samples_processed": 220500,
+    "stages": [
+      "stft",
+      "infer",
+      "istft"
+    ]
+  },
+  "model_path": "artifacts/models/umx-live.pt",
+  "queue_depth": 10,
+  "requested_model_path": "artifacts/models/umx-live.pt",
+  "sample_rate_hz": 22050,
+  "source": {
+    "kind": "mp3",
+    "reference": "fixtures/audio/demo_mix.mp3"
+  },
+  "status": "ok",
+  "stem_paths": {
+    "bass": "artifacts/bench/s06-capstone-7KBxp2/throughput/bass.wav",
+    "drums": "artifacts/bench/s06-capstone-7KBxp2/throughput/drums.wav",
+    "other": "artifacts/bench/s06-capstone-7KBxp2/throughput/other.wav",
+    "vocals": "artifacts/bench/s06-capstone-7KBxp2/throughput/vocals.wav"
+  },
+  "stft_ms": 20.946959,
+  "timestamp": "2026-05-05T19:06:06.253572+00:00",
+  "total_ms": 20.947587
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import threading
 import time
@@ -13,6 +14,7 @@ from .source_ingest import SourceIngestEnvelope
 DEFAULT_MIC_KIND = "mic"
 DEFAULT_MIC_BACKEND = "sounddevice"
 DEFAULT_MIC_CAPTURE_DURATION_S = 1.0
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -82,7 +84,8 @@ class FakeMicCaptureBackend:
         capture_duration_s: float,
         capture_timeout_s: float,
     ) -> CapturedMicAudio:
-        del capture_timeout_s
+        if capture_timeout_s <= 0:
+            raise ValueError(f"capture_timeout_s must be positive, got {capture_timeout_s}")
         frame_count = max(1, int(round(sample_rate_hz * capture_duration_s)))
         pcm = b"\x00\x00" * frame_count
         return CapturedMicAudio(
@@ -109,6 +112,8 @@ class SoundDeviceMicCaptureBackend:
         capture_duration_s: float,
         capture_timeout_s: float,
     ) -> CapturedMicAudio:
+        if capture_timeout_s <= 0:
+            raise ValueError(f"capture_timeout_s must be positive, got {capture_timeout_s}")
         if sample_rate_hz <= 0:
             raise MicCaptureFailedError(
                 error_stage="capture_failed",
@@ -141,6 +146,7 @@ class SoundDeviceMicCaptureBackend:
         error: dict[str, BaseException] = {}
         frames = max(1, int(round(sample_rate_hz * capture_duration_s)))
         device = None if device_reference in {"", "default"} else device_reference
+        _log.info("mic device selected: %s backend=%s", device_reference, self.backend_name)
 
         def _capture() -> None:
             try:
@@ -167,6 +173,7 @@ class SoundDeviceMicCaptureBackend:
                 sd.stop()
             except Exception:
                 pass
+            _log.warning("mic capture timeout for %s after %.3fs", device_reference, capture_timeout_s)
             raise MicCaptureTimeoutError(
                 error_stage="capture_timeout",
                 device_reference=device_reference,
@@ -177,6 +184,7 @@ class SoundDeviceMicCaptureBackend:
                 ),
             )
         if "exc" in error:
+            _log.error("mic capture failed for %s: %s", device_reference, error["exc"])
             raise MicCaptureFailedError(
                 error_stage="capture_failed",
                 device_reference=device_reference,
@@ -237,6 +245,8 @@ def build_mic_source_ingest(
 ) -> SourceIngestEnvelope:
     """Capture microphone PCM and convert it into the shared ingest envelope."""
 
+    if capture_timeout_s <= 0:
+        raise ValueError(f"capture_timeout_s must be positive, got {capture_timeout_s}")
     capture_backend = backend or SoundDeviceMicCaptureBackend()
     started = time.perf_counter()
     captured = capture_backend.capture(

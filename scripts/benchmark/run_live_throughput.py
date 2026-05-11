@@ -50,6 +50,15 @@ def _ensure_child_path(output_dir: Path, artifact_path: Path, label: str) -> Non
         raise ValueError(f"{label} must live inside output_dir: {artifact_path} (output_dir={output_dir})")
 
 
+def _execution_kind(device_used: str, model_path: str) -> str:
+    model_path_lower = model_path.lower()
+    if "tensorrt" in model_path_lower or model_path_lower.endswith(".engine"):
+        return "tensorrt"
+    if device_used == "gpu":
+        return "gpu_pytorch"
+    return "cpu"
+
+
 def _build_live_command(
     *,
     input_path: Path | None,
@@ -133,6 +142,7 @@ def _build_result_payload(
     max_wall_clock_ms: float | None,
     live_timeout_s: float,
     live_command: list[str],
+    execution_kind: str,
 ) -> dict[str, Any]:
     wall_clock_ms = max(0.0, wall_clock_ms)
     wall_clock_ms_per_chunk = wall_clock_ms / chunk_duration_s if chunk_duration_s > 0 else 0.0
@@ -147,6 +157,7 @@ def _build_result_payload(
         "throughput_chunks_per_second": round(throughput_chunks_per_second, 6),
         "device_requested": device_requested,
         "device_used": device_used,
+        "execution_kind": execution_kind,
         "source_mode": source_mode,
         "status": status,
         "phase": phase,
@@ -214,6 +225,7 @@ def _build_failure_payload(
         max_wall_clock_ms=max_wall_clock_ms,
         live_timeout_s=live_timeout_s,
         live_command=live_command,
+        execution_kind=_execution_kind(device_used, live_command[live_command.index("--model-path") + 1] if "--model-path" in live_command else DEFAULT_MODEL_PATH),
     )
     return payload
 
@@ -586,6 +598,7 @@ def run_live_throughput_benchmark(
         max_wall_clock_ms=max_wall_clock_ms,
         live_timeout_s=live_timeout_s,
         live_command=live_command,
+        execution_kind=_execution_kind(device_used, model_path),
     )
     _write_json(artifact_path, result_payload)
 

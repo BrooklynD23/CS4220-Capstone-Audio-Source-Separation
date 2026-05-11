@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import tempfile
+from typing import TYPE_CHECKING
 import wave
+
+import numpy as np
 
 from .contracts import StemRouting
 from .source_ingest import SourceIngestEnvelope
+
+if TYPE_CHECKING:
+    pass
 
 DEFAULT_VOCALS_NAME = "vocals.wav"
 DEFAULT_DRUMS_NAME = "drums.wav"
 DEFAULT_BASS_NAME = "bass.wav"
 DEFAULT_OTHER_NAME = "other.wav"
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -123,18 +131,98 @@ def write_live_stems(
             staged_paths.append(staged_path)
 
         for _stem_name, (final_path, _) in stem_payloads.items():
+            _log.debug("writing live stem %s to %s", _stem_name, final_path)
             (staging_root / final_path.name).replace(final_path)
     except FileNotFoundError as exc:
+        _log.error("stem output directory write failed for %s: %s", output_root, exc)
         raise StemRoutingError(
             error_stage="output_write_failed",
             output_dir=output_root,
             message=f"output directory write failed for {output_root}: {exc}",
         ) from exc
     except OSError as exc:
+        _log.error("stem output directory write failed for %s: %s", output_root, exc)
         raise StemRoutingError(
             error_stage="output_write_failed",
             output_dir=output_root,
             message=f"output directory write failed for {output_root}: {exc}",
+        ) from exc
+    finally:
+        for staged_file in staged_paths:
+            try:
+                staged_file.unlink()
+            except FileNotFoundError:
+                pass
+        try:
+            staging_root.rmdir()
+        except OSError:
+            pass
+
+    return routing
+
+
+def write_live_stems_from_arrays(
+    stem_arrays: dict[str, np.ndarray],
+    output_dir: Path | str,
+    sample_rate_hz: int,
+    *,
+    vocals_name: str = DEFAULT_VOCALS_NAME,
+    drums_name: str = DEFAULT_DRUMS_NAME,
+    bass_name: str = DEFAULT_BASS_NAME,
+    other_name: str = DEFAULT_OTHER_NAME,
+) -> StemRouting:
+    """Write four stem WAVs from real separated numpy arrays (channels, samples)."""
+    from .umx_separator import stem_to_mono_pcm
+
+    output_root = Path(output_dir)
+    if output_root.exists() and not output_root.is_dir():
+        raise StemRoutingError(
+            error_stage="output_write_failed",
+            output_dir=output_root,
+            message=f"output directory is not writable: {output_root}",
+        )
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    routing = resolve_live_stem_routing(
+        output_root,
+        vocals_name=vocals_name,
+        drums_name=drums_name,
+        bass_name=bass_name,
+        other_name=other_name,
+    )
+
+    name_to_path = {
+        "vocals": Path(routing.vocals_path),
+        "drums": Path(routing.drums_path),
+        "bass": Path(routing.bass_path),
+        "other": Path(routing.other_path),
+    }
+    name_to_wav_name = {
+        "vocals": vocals_name,
+        "drums": drums_name,
+        "bass": bass_name,
+        "other": other_name,
+    }
+
+    staging_root = Path(tempfile.mkdtemp(prefix="live-stems-", dir=str(output_root.parent)))
+    staged_paths: list[Path] = []
+    try:
+        for stem_name, final_path in name_to_path.items():
+            arr = stem_arrays.get(stem_name)
+            pcm = stem_to_mono_pcm(arr) if arr is not None else b"\x00\x00" * 1024
+            staged_path = staging_root / name_to_wav_name[stem_name]
+            _write_wav(staged_path, sample_rate_hz=sample_rate_hz, pcm=pcm)
+            staged_paths.append(staged_path)
+
+        for stem_name, final_path in name_to_path.items():
+            _log.debug("writing live stem %s to %s", stem_name, final_path)
+            (staging_root / name_to_wav_name[stem_name]).replace(final_path)
+    except OSError as exc:
+        _log.error("stem write failed for %s: %s", output_root, exc)
+        raise StemRoutingError(
+            error_stage="output_write_failed",
+            output_dir=output_root,
+            message=f"stem write failed: {exc}",
         ) from exc
     finally:
         for staged_file in staged_paths:
