@@ -9,8 +9,8 @@ description = "Reproducible evaluation and benchmarking harness for UMX proof wo
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-  "PyYAML==6.0.2",
-  "jsonschema==4.23.0",
+  "PyYAML==6.0.3",
+  "jsonschema==4.26.0",
   "imageio-ffmpeg==0.6.0",
   "numpy>=1.24.0",
 ]
@@ -19,10 +19,10 @@ dependencies = [
 dev = [
   "pytest==8.3.5",
   "pytest-cov==7.1.0",
-  "playwright==1.54.0",
+  "playwright==1.59.0",
 ]
 mic = [
-  "sounddevice==0.5.1",
+  "sounddevice==0.5.5",
 ]
 gpu = [
   "torch>=2.0.0",
