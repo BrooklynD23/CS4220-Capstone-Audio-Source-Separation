@@ -87,11 +87,14 @@ if defined INPUT_PATH (
 )
 if errorlevel 1 exit /b 1
 
-for /f "usebackq delims=" %%I in (`"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\encode_artifact_path.py" "%PROJECT_ROOT%" "%ARTIFACT_PATH%"`) do set "ENCODED_ARTIFACT_PATH=%%I"
+"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\encode_artifact_path.py" "%PROJECT_ROOT%" "%ARTIFACT_PATH%" > "%TEMP%\encode_path_tmp.txt"
 if errorlevel 1 (
+  del "%TEMP%\encode_path_tmp.txt" >nul 2>&1
   call :fail "Artifact path must stay inside the repository so the UI can serve it."
   exit /b 1
 )
+set /p ENCODED_ARTIFACT_PATH=<"%TEMP%\encode_path_tmp.txt"
+del "%TEMP%\encode_path_tmp.txt" >nul 2>&1
 
 set "UI_URL=http://%UI_BIND%:%UI_PORT%/ui/compare/?artifact=%ENCODED_ARTIFACT_PATH%"
 echo run_local_demo: artifact ready at %ARTIFACT_PATH%
