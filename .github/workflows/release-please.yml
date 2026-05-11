@@ -22,7 +22,7 @@ jobs:
 
       # After a release PR is merged, build and publish artifacts
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         if: ${{ steps.release.outputs.release_created }}
 
       - name: Set up Python
