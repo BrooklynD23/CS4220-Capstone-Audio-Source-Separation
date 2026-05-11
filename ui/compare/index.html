@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Compare Demo</title>
     <link rel="stylesheet" href="./styles.css" />
-    <script defer src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
+        <a href="/ui/demo/" style="display:inline-block;margin-bottom:0.75rem;color:#8ee3ff;font-size:0.875rem;text-decoration:none;">→ Live Demo</a>
         <p class="eyebrow">Live runtime compare shell</p>
         <h1>Persisted artifact compare</h1>
         <p class="lede">
@@ -105,23 +106,38 @@
         <div class="waveform-grid">
           <article class="waveform-lane">
             <span>Input</span>
-            <canvas id="waveform-input" data-testid="waveform-canvas-input" width="640" height="96"></canvas>
+            <div class="lane-canvases">
+              <canvas id="waveform-input" data-testid="waveform-canvas-input" width="640" height="96"></canvas>
+              <canvas id="spectrogram-input" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
           </article>
           <article class="waveform-lane">
             <span>Vocals</span>
-            <canvas id="waveform-vocals" data-testid="waveform-canvas-vocals" width="640" height="96"></canvas>
+            <div class="lane-canvases">
+              <canvas id="waveform-vocals" data-testid="waveform-canvas-vocals" width="640" height="96"></canvas>
+              <canvas id="spectrogram-vocals" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
           </article>
           <article class="waveform-lane">
             <span>Drums</span>
-            <canvas id="waveform-drums" data-testid="waveform-canvas-drums" width="640" height="96"></canvas>
+            <div class="lane-canvases">
+              <canvas id="waveform-drums" data-testid="waveform-canvas-drums" width="640" height="96"></canvas>
+              <canvas id="spectrogram-drums" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
           </article>
           <article class="waveform-lane">
             <span>Bass</span>
-            <canvas id="waveform-bass" data-testid="waveform-canvas-bass" width="640" height="96"></canvas>
+            <div class="lane-canvases">
+              <canvas id="waveform-bass" data-testid="waveform-canvas-bass" width="640" height="96"></canvas>
+              <canvas id="spectrogram-bass" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
           </article>
           <article class="waveform-lane">
             <span>Other</span>
-            <canvas id="waveform-other" data-testid="waveform-canvas-other" width="640" height="96"></canvas>
+            <div class="lane-canvases">
+              <canvas id="waveform-other" data-testid="waveform-canvas-other" width="640" height="96"></canvas>
+              <canvas id="spectrogram-other" class="spectrogram-canvas" width="640" height="80"></canvas>
+            </div>
           </article>
         </div>
         <div class="playback-controls">

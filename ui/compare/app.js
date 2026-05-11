@@ -1,3 +1,5 @@
+import { decodePcmWav, drawWaveform, drawSpectrogram } from '../shared/audio-render.js';
+
 const MODE_CONFIG = {
   'side-by-side': {
     title: 'Side-by-side',
@@ -42,6 +44,13 @@ const elements = {
     drums: document.getElementById('waveform-drums'),
     bass: document.getElementById('waveform-bass'),
     other: document.getElementById('waveform-other'),
+  },
+  spectrogramCanvases: {
+    input: document.getElementById('spectrogram-input'),
+    vocals: document.getElementById('spectrogram-vocals'),
+    drums: document.getElementById('spectrogram-drums'),
+    bass: document.getElementById('spectrogram-bass'),
+    other: document.getElementById('spectrogram-other'),
   },
   playbackToggle: document.getElementById('playback-toggle'),
   playbackState: document.getElementById('playback-state'),
@@ -109,6 +118,7 @@ const compareState = {
 window.__compareState = compareState;
 window.__setCompareMode = setCompareMode;
 window.__loadCompareArtifact = loadArtifactFromFile;
+window.__loadCompareArtifactFromUrl = loadArtifactFromUrl;
 
 const emptyState = {
   source: { kind: '—', label: '—', reference: '—', metadata: '—' },
@@ -384,89 +394,6 @@ async function loadBenchmarkFromFile() {
   }
 }
 
-function readAscii(view, offset, length) {
-  let text = '';
-  for (let index = 0; index < length; index += 1) {
-    text += String.fromCharCode(view.getUint8(offset + index));
-  }
-  return text;
-}
-
-function decodePcmWav(buffer) {
-  const view = new DataView(buffer);
-  if (readAscii(view, 0, 4) !== 'RIFF' || readAscii(view, 8, 4) !== 'WAVE') {
-    throw new Error('WAV file must use RIFF/WAVE format');
-  }
-
-  let offset = 12;
-  let channels = 1;
-  let bitsPerSample = 16;
-  let dataOffset = -1;
-  let dataSize = 0;
-  while (offset + 8 <= view.byteLength) {
-    const chunkId = readAscii(view, offset, 4);
-    const chunkSize = view.getUint32(offset + 4, true);
-    const payloadOffset = offset + 8;
-    if (chunkId === 'fmt ') {
-      const audioFormat = view.getUint16(payloadOffset, true);
-      if (audioFormat !== 1) {
-        throw new Error('Only PCM WAV files are supported');
-      }
-      channels = view.getUint16(payloadOffset + 2, true);
-      bitsPerSample = view.getUint16(payloadOffset + 14, true);
-    }
-    if (chunkId === 'data') {
-      dataOffset = payloadOffset;
-      dataSize = chunkSize;
-      break;
-    }
-    offset = payloadOffset + chunkSize + (chunkSize % 2);
-  }
-
-  if (dataOffset < 0 || bitsPerSample !== 16) {
-    throw new Error('WAV file must contain 16-bit PCM data');
-  }
-
-  const sampleCount = Math.floor(dataSize / 2 / channels);
-  const samples = new Float32Array(sampleCount);
-  for (let frame = 0; frame < sampleCount; frame += 1) {
-    let sum = 0;
-    for (let channel = 0; channel < channels; channel += 1) {
-      sum += view.getInt16(dataOffset + ((frame * channels + channel) * 2), true) / 32768;
-    }
-    samples[frame] = sum / channels;
-  }
-  return samples;
-}
-
-function drawWaveform(canvas, samples) {
-  const context = canvas.getContext('2d');
-  const width = canvas.width;
-  const height = canvas.height;
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = '#081523';
-  context.fillRect(0, 0, width, height);
-  context.strokeStyle = '#8ee3ff';
-  context.lineWidth = 2;
-  context.beginPath();
-  const centerY = height / 2;
-  for (let x = 0; x < width; x += 1) {
-    const start = Math.floor((x / width) * samples.length);
-    const end = Math.max(start + 1, Math.floor(((x + 1) / width) * samples.length));
-    let min = 1;
-    let max = -1;
-    for (let index = start; index < end; index += 1) {
-      const value = samples[index] || 0;
-      min = Math.min(min, value);
-      max = Math.max(max, value);
-    }
-    context.moveTo(x, centerY - max * (height * 0.42));
-    context.lineTo(x, centerY - min * (height * 0.42));
-  }
-  context.stroke();
-  canvas.dataset.rendered = 'true';
-}
-
 function stemKeyForFile(file) {
   const name = file.name.toLowerCase();
   return ['vocals', 'drums', 'bass', 'other'].find((stem) => name.includes(stem)) || null;
@@ -483,6 +410,7 @@ async function loadAudioWaveforms() {
   try {
     const inputSamples = decodePcmWav(await inputFile.arrayBuffer());
     drawWaveform(elements.waveformCanvases.input, inputSamples);
+    drawSpectrogram(elements.spectrogramCanvases.input, inputSamples);
 
     const stemsByKey = {};
     stemFiles.forEach((file) => {
@@ -498,6 +426,7 @@ async function loadAudioWaveforms() {
       }
       const samples = decodePcmWav(await stemsByKey[key].arrayBuffer());
       drawWaveform(elements.waveformCanvases[key], samples);
+      drawSpectrogram(elements.spectrogramCanvases[key], samples);
     }
 
     if (compareState.audioElement) {
@@ -719,7 +648,7 @@ function normalizeArtifact(payload, loadedPath) {
 
 function renderArtifact(artifact) {
   compareState.artifact = artifact;
-  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp}`;
+  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp ?? '—'}`;
   setBanner(`Loaded ${artifact.loadedPath} — source ${artifact.source.kind} (${artifact.source.reference})`, {
     type: 'status',
   });
@@ -968,9 +897,7 @@ async function loadArtifactFromFile() {
   setLoading(true);
   try {
     const raw = await file.text();
-    const payload = JSON.parse(raw);
-    const artifact = normalizeArtifact(payload, file.name);
-    renderArtifact(artifact);
+    renderArtifact(normalizeArtifact(JSON.parse(raw), file.name));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!compareState.artifact) {
@@ -978,6 +905,43 @@ async function loadArtifactFromFile() {
       setEmptyState();
     }
     setBanner(`Failed to parse or validate JSON artifact: ${message}`, { type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+}
+
+function resolveArtifactUrl(artifactPath) {
+  const normalizedPath = typeof artifactPath === 'string' ? artifactPath.trim() : '';
+  if (!normalizedPath) {
+    throw new Error('artifact query parameter must be a non-empty path');
+  }
+
+  const resolvedUrl = new URL(normalizedPath, `${window.location.origin}/`);
+  if (resolvedUrl.origin !== window.location.origin) {
+    throw new Error('artifact query parameter must stay on the same local server origin');
+  }
+  return resolvedUrl;
+}
+
+async function loadArtifactFromUrl(artifactPath) {
+  const resolvedUrl = resolveArtifactUrl(artifactPath);
+  const loadedPath = resolvedUrl.pathname.replace(/^\/+/, '') || resolvedUrl.pathname;
+
+  setLoading(true);
+  try {
+    const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`artifact request failed with status ${response.status}`);
+    }
+
+    renderArtifact(normalizeArtifact(await response.json(), loadedPath));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!compareState.artifact) {
+      compareState.artifactToken = '—';
+      setEmptyState();
+    }
+    setBanner(`Failed to preload artifact: ${message}`, { type: 'error' });
   } finally {
     setLoading(false);
   }
@@ -1001,6 +965,11 @@ function initialize() {
     button.addEventListener('click', () => setCompareMode(button.dataset.mode));
   });
   setBanner('Awaiting a loaded artifact.', { type: 'status' });
+
+  const preloadArtifact = new URLSearchParams(window.location.search).get('artifact');
+  if (preloadArtifact) {
+    void loadArtifactFromUrl(preloadArtifact);
+  }
 }
 
 initialize();
