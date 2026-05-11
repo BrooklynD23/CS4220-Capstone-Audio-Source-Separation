@@ -66,7 +66,6 @@ async function runSeparation() {
       return;
     }
 
-    clearInterval(timer);
     el.statusLine.textContent = `Done in ${((Date.now() - startMs) / 1000).toFixed(1)}s`;
 
     await renderStems(result.stem_urls);
@@ -77,9 +76,9 @@ async function runSeparation() {
     el.perfSection.hidden = false;
     el.benchmarkSection.hidden = false;
   } catch (err) {
-    clearInterval(timer);
     showError(`Request failed: ${err.message}`);
   } finally {
+    clearInterval(timer);
     el.separateBtn.disabled = false;
   }
 }
@@ -139,12 +138,15 @@ function renderBenchmarkTable(manifest) {
       ? '1.0×'
       : `${(cpuMs / row.ms).toFixed(1)}×`;
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${row.kind}</td>
-      <td>${row.ms.toFixed(2)}</td>
-      <td>${speedup}</td>
-      <td>${row.sdr}</td>
-    `;
+    const tdKind = document.createElement('td');
+    tdKind.textContent = row.kind;
+    const tdMs = document.createElement('td');
+    tdMs.textContent = row.ms.toFixed(2);
+    const tdSpeedup = document.createElement('td');
+    tdSpeedup.textContent = speedup;
+    const tdSdr = document.createElement('td');
+    tdSdr.textContent = row.sdr;
+    tr.append(tdKind, tdMs, tdSpeedup, tdSdr);
     el.benchmarkTbody.appendChild(tr);
   }
 
