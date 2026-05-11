@@ -27,36 +27,36 @@ set "DEVICE=%DEFAULT_DEVICE%"
 set "INPUT_PATH="
 set "SKIP_INSTALL=false"
 set "INSTALL_ONLY=false"
-set "WITH_GPU=false"
-set "WITH_MIC=false"
+set "WITH_GPU=true"
+set "WITH_MIC=true"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "BASE_PYTHON="
 set "BASE_PYTHON_ARGS="
 set "BASE_PYTHON_DISPLAY="
 
 call :parse_args %*
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto :end_error
 
 call :validate_args
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto :end_error
 
 call :create_venv_if_needed
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto :end_error
 
 if not exist "%VENV_PYTHON%" (
   call :fail "Virtual environment python not found at %VENV_PYTHON%"
-  exit /b 1
+  goto :end_error
 )
 
 call :ensure_supported_python "%VENV_PYTHON%" ""
 if errorlevel 1 (
   call :fail "Virtual environment python at %VENV_PYTHON% is unsupported. Use Python >=3.10,<3.13."
-  exit /b 1
+  goto :end_error
 )
 
 if /I not "%SKIP_INSTALL%"=="true" (
   call :install_dependencies
-  if errorlevel 1 exit /b 1
+  if errorlevel 1 goto :end_error
 ) else (
   echo run_local_demo: skipping dependency installation
 )
@@ -91,13 +91,13 @@ if defined INPUT_PATH (
     --mic-backend "%MIC_BACKEND%" ^
     --mic-device "%MIC_DEVICE%"
 )
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto :end_error
 
 "%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\encode_artifact_path.py" "%PROJECT_ROOT%" "%ARTIFACT_PATH%" > "%TEMP%\encode_path_tmp.txt"
 if errorlevel 1 (
   del "%TEMP%\encode_path_tmp.txt" >nul 2>&1
   call :fail "Artifact path must stay inside the repository so the UI can serve it."
-  exit /b 1
+  goto :end_error
 )
 set /p ENCODED_ARTIFACT_PATH=<"%TEMP%\encode_path_tmp.txt"
 del "%TEMP%\encode_path_tmp.txt" >nul 2>&1
@@ -122,9 +122,19 @@ echo  Demo page (upload your own MP3):  %DEMO_URL%
 echo  Compare UI (pre-loaded run):      %UI_URL%
 echo.
 echo  Close the "Audio Source Separation Server" window to stop the server.
-echo  Press any key to close this window.
-pause >nul
-exit /b 0
+echo.
+:success_prompt
+set /p "REPLY=Close this window? [Y/N]: "
+if /I "%REPLY%"=="Y" exit /b 0
+goto :success_prompt
+
+:end_error
+echo.
+echo run_local_demo: exited with errors — see messages above.
+:error_prompt
+set /p "REPLY=Terminate? [Y/N]: "
+if /I "%REPLY%"=="Y" exit /b 1
+goto :error_prompt
 
 :usage
 echo Usage: run_local_demo.bat [options]
@@ -355,7 +365,7 @@ exit /b 1
 
 :probe_py_launcher
 where py >nul 2>&1 || exit /b 1
-py -%~1 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,13) else 1)" >nul 2>&1 || exit /b 1
+py -%~1 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,15) else 1)" >nul 2>&1 || exit /b 1
 set "BASE_PYTHON=py"
 set "BASE_PYTHON_ARGS=-%~1"
 set "BASE_PYTHON_DISPLAY=py -%~1"
@@ -363,7 +373,7 @@ exit /b 0
 
 :probe_python_command
 where %~1 >nul 2>&1 || exit /b 1
-%~1 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,13) else 1)" >nul 2>&1 || exit /b 1
+%~1 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,15) else 1)" >nul 2>&1 || exit /b 1
 set "BASE_PYTHON=%~1"
 set "BASE_PYTHON_ARGS="
 set "BASE_PYTHON_DISPLAY=%~1"
@@ -392,9 +402,10 @@ popd >nul
 exit /b %INSTALL_EXIT%
 
 :ensure_supported_python
-"%~1" %~2 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,13) else 1)" >nul 2>&1
+"%~1" %~2 -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info < (3,15) else 1)" >nul 2>&1
 exit /b %errorlevel%
 
 :fail
 echo run_local_demo: %~1 1>&2
 exit /b 1
+

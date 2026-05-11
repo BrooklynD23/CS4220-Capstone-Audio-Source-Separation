@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+import shutil
 import site
 import subprocess
 from typing import Final
@@ -14,19 +15,23 @@ _log = logging.getLogger(__name__)
 
 
 def _resolve_ffmpeg_executable() -> Path:
-    """Locate a bundled ffmpeg binary without depending on package import paths."""
+    try:
+        import imageio_ffmpeg
+        return Path(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        pass
 
-    user_site = Path(site.getusersitepackages())
-    bundled_dir = user_site / "imageio_ffmpeg" / "binaries"
-    if bundled_dir.exists():
-        for candidate in sorted(bundled_dir.iterdir()):
-            if candidate.name.startswith("ffmpeg-") and candidate.is_file():
-                return candidate
+    # Check all site-packages directories (covers venv + user installs)
+    for site_dir in site.getsitepackages() + [site.getusersitepackages()]:
+        bundled_dir = Path(site_dir) / "imageio_ffmpeg" / "binaries"
+        if bundled_dir.exists():
+            for candidate in sorted(bundled_dir.iterdir()):
+                if candidate.name.startswith("ffmpeg-") and candidate.is_file():
+                    return candidate
 
-    for candidate_name in ("ffmpeg", "ffmpeg.exe"):
-        candidate = Path(candidate_name)
-        if candidate.exists():
-            return candidate
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return Path(system_ffmpeg)
 
     raise FileNotFoundError(
         "ffmpeg executable not found; install imageio-ffmpeg or provide ffmpeg on PATH"

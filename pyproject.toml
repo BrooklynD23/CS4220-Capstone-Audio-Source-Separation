@@ -7,7 +7,7 @@ name = "audio-source-separation-eval"
 version = "0.1.0"
 description = "Reproducible evaluation and benchmarking harness for UMX proof workflows."
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.15"
 dependencies = [
   "PyYAML==6.0.2",
   "jsonschema==4.23.0",

@@ -66,7 +66,7 @@ python_supports_project() {
   local python_cmd="$1"
   "${python_cmd}" - <<'PY' >/dev/null 2>&1
 import sys
-raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)
+raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 15) else 1)
 PY
 }
 
@@ -83,7 +83,7 @@ find_python() {
       printf '%s\n' "${PYTHON_BIN}"
       return 0
     fi
-    fail "PYTHON_BIN points to an unsupported interpreter. Use Python >=3.10,<3.13."
+    fail "PYTHON_BIN points to an unsupported interpreter. Use Python >=3.10,<3.15."
   fi
 
   candidates=(python3.12 python3.11 python3.10 python3 python)
@@ -112,10 +112,10 @@ ensure_python_version() {
   local python_cmd="$1"
   "${python_cmd}" - <<'PY'
 import sys
-if sys.version_info < (3, 10) or sys.version_info >= (3, 13):
+if sys.version_info < (3, 10) or sys.version_info >= (3, 15):
     raise SystemExit(
         f"run_local_demo: Python {sys.version.split()[0]} is unsupported. "
-        "Use Python >=3.10,<3.13."
+        "Use Python >=3.10,<3.15."
     )
 PY
 }
