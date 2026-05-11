@@ -103,21 +103,35 @@ set /p ENCODED_ARTIFACT_PATH=<"%TEMP%\encode_path_tmp.txt"
 del "%TEMP%\encode_path_tmp.txt" >nul 2>&1
 
 set "UI_URL=http://%UI_BIND%:%UI_PORT%/ui/compare/?artifact=%ENCODED_ARTIFACT_PATH%"
+set "DEMO_URL=http://%UI_BIND%:%UI_PORT%/ui/demo/"
 echo run_local_demo: artifact ready at %ARTIFACT_PATH%
-echo run_local_demo: starting compare UI at %UI_URL%
-echo run_local_demo: press Ctrl+C to stop the server
+echo run_local_demo: starting server in background window...
 
-"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\serve_compare_demo.py" ^
+start "Audio Source Separation Server" "%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\serve_compare_demo.py" ^
   --bind "%UI_BIND%" ^
   --port "%UI_PORT%" ^
   --directory "%PROJECT_ROOT%"
-exit /b %errorlevel%
+
+timeout /t 2 /nobreak >nul
+
+echo run_local_demo: opening browser...
+start "" "%UI_URL%"
+
+echo.
+echo  Demo page (upload your own MP3):  %DEMO_URL%
+echo  Compare UI (pre-loaded run):      %UI_URL%
+echo.
+echo  Close the "Audio Source Separation Server" window to stop the server.
+echo  Press any key to close this window.
+pause >nul
+exit /b 0
 
 :usage
 echo Usage: run_local_demo.bat [options]
 echo.
 echo Creates or reuses .venv, installs project dependencies, runs the live separation CLI
-echo to generate a fresh artifact, then starts the compare UI with that artifact preloaded.
+echo to generate a fresh artifact, starts the server in a background window, then opens
+echo the browser automatically to the compare UI.
 echo.
 echo Options:
 echo   --source-mode ^<mp3^|video-audio^|mic^>  Source used for the backend run. Default: mp3
