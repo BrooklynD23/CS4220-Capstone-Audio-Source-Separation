@@ -26,6 +26,7 @@ set "MIC_DEVICE=default"
 set "DEVICE=%DEFAULT_DEVICE%"
 set "INPUT_PATH="
 set "SKIP_INSTALL=false"
+set "INSTALL_ONLY=false"
 set "WITH_GPU=false"
 set "WITH_MIC=false"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
@@ -58,6 +59,11 @@ if /I not "%SKIP_INSTALL%"=="true" (
   if errorlevel 1 exit /b 1
 ) else (
   echo run_local_demo: skipping dependency installation
+)
+
+if /I "%INSTALL_ONLY%"=="true" (
+  echo run_local_demo: dependencies installed, exiting (--install-only)
+  exit /b 0
 )
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
@@ -126,6 +132,7 @@ echo   --mic-device ^<name^>                  Mic device identifier. Default: de
 echo   --with-gpu                           Install the optional gpu extra
 echo   --with-mic                           Install the optional mic extra
 echo   --skip-install                       Reuse the current environment without pip install
+echo   --install-only                       Install dependencies then exit without running anything
 echo   --help                               Show this help text
 echo.
 echo Examples:
@@ -240,6 +247,11 @@ if /I "%~1"=="--with-mic" (
 )
 if /I "%~1"=="--skip-install" (
   set "SKIP_INSTALL=true"
+  shift
+  goto parse_args
+)
+if /I "%~1"=="--install-only" (
+  set "INSTALL_ONLY=true"
   shift
   goto parse_args
 )
