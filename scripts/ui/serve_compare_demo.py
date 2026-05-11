@@ -40,7 +40,6 @@ def _parse_multipart(
 
     raw = rfile.read(content_length)
     sep = (f"--{boundary}").encode()
-    end = (f"--{boundary}--").encode()
 
     fields: dict[str, Any] = {}
     parts = raw.split(sep)
@@ -178,10 +177,14 @@ class CompareDemoHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if self.path != "/api/separate":
-            self.send_error(404, "Not Found")
+            self._send_json(404, {"error": "Not Found"})
             return
 
-        content_length = int(self.headers.get("Content-Length", "0"))
+        try:
+            content_length = max(0, int(self.headers.get("Content-Length", "0")))
+        except (ValueError, TypeError):
+            self._send_json(400, {"error": "Invalid Content-Length"})
+            return
         if content_length > MAX_UPLOAD_BYTES:
             self._send_json(413, {"error": "File too large (max 50 MB)"})
             return
