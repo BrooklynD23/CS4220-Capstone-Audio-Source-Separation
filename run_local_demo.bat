@@ -87,7 +87,7 @@ if defined INPUT_PATH (
 )
 if errorlevel 1 exit /b 1
 
-for /f "usebackq delims=" %%I in (`"%VENV_PYTHON%" -c "from pathlib import Path; from urllib.parse import quote; import sys; root=Path(sys.argv[1]).resolve(); artifact=Path(sys.argv[2]).resolve(); print('/' + quote(artifact.relative_to(root).as_posix(), safe='/'))" "%PROJECT_ROOT%" "%ARTIFACT_PATH%"`) do set "ENCODED_ARTIFACT_PATH=%%I"
+for /f "usebackq delims=" %%I in (`"%VENV_PYTHON%" "%PROJECT_ROOT%\scripts\ui\encode_artifact_path.py" "%PROJECT_ROOT%" "%ARTIFACT_PATH%"`) do set "ENCODED_ARTIFACT_PATH=%%I"
 if errorlevel 1 (
   call :fail "Artifact path must stay inside the repository so the UI can serve it."
   exit /b 1
