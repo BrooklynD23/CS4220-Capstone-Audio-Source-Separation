@@ -6,6 +6,7 @@ import math
 import struct
 import threading
 import wave
+import shutil
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -80,6 +81,13 @@ def _write_temp_fixture(tmp_path: Path, name: str, payload: dict) -> Path:
 def _write_temp_text_fixture(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _write_project_fixture(relative_path: str, payload: dict) -> Path:
+    path = PROJECT_ROOT / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
 
@@ -387,3 +395,52 @@ def test_compare_ui_loads_wav_stems_and_renders_waveform_lanes(compare_server: s
     finally:
         browser.close()
         playwright.stop()
+
+
+def test_compare_ui_renders_dual_artifact_compare(compare_server: str) -> None:
+    cpu_payload = json.loads(HEALTHY_FIXTURE.read_text(encoding='utf-8'))
+    cpu_payload['metadata']['device_requested'] = 'cpu'
+    cpu_payload['metadata']['device_used'] = 'cpu'
+    cpu_payload['total_ms'] = 224.0
+    cpu_payload['infer_ms'] = 180.0
+    cpu_payload['stft_ms'] = 24.0
+    cpu_payload['istft_ms'] = 20.0
+    cpu_payload['timestamp'] = '2026-05-12T08:00:00Z'
+
+    gpu_payload = json.loads(HEALTHY_FIXTURE.read_text(encoding='utf-8'))
+    gpu_payload['metadata']['device_requested'] = 'gpu'
+    gpu_payload['metadata']['device_used'] = 'gpu'
+    gpu_payload['total_ms'] = 84.0
+    gpu_payload['infer_ms'] = 54.0
+    gpu_payload['stft_ms'] = 16.0
+    gpu_payload['istft_ms'] = 14.0
+    gpu_payload['timestamp'] = '2026-05-12T08:00:30Z'
+
+    fixture_dir = PROJECT_ROOT / 'artifacts' / 'ui-compare-test'
+    cpu_path = _write_project_fixture('artifacts/ui-compare-test/cpu-runtime.json', cpu_payload)
+    gpu_path = _write_project_fixture('artifacts/ui-compare-test/gpu-runtime.json', gpu_payload)
+
+    playwright, browser, page = _load_compare_page(compare_server)
+    try:
+        page.goto(
+            f"{compare_server.rstrip('/')}/ui/compare/?artifact=/{cpu_path.relative_to(PROJECT_ROOT).as_posix()}"
+            f"&artifact2=/{gpu_path.relative_to(PROJECT_ROOT).as_posix()}",
+            wait_until="networkidle",
+        )
+
+        page.wait_for_function("document.querySelector('[data-testid=\"compare-dual-board\"]').offsetParent !== null")
+
+        assert page.locator('[data-testid="compare-canvas"]').get_attribute('data-layout') == 'dual'
+        assert page.locator('[data-testid="compare-dual-board"]').get_attribute('data-testid') == 'compare-dual-board'
+        assert page.locator('[data-testid="compare-dual-columns"]').locator('[data-testid="compare-dual-column"]').count() == 2
+        assert page.locator('[data-testid="compare-dual-left-role"]').text_content() == 'CPU'
+        assert page.locator('[data-testid="compare-dual-right-role"]').text_content() == 'GPU'
+        assert page.locator('[data-testid="compare-dual-left-total"]').text_content() == '224.00 ms total'
+        assert page.locator('[data-testid="compare-dual-right-total"]').text_content() == '84.00 ms total'
+        assert page.locator('[data-testid="compare-dual-speedup"]').text_content() == 'GPU is 2.7× faster'
+        assert page.locator('[data-testid="compare-stage-card"]').count() == 6
+        assert 'is-hidden' in (page.locator('[data-testid="final-stems-strip"]').get_attribute('class') or '')
+    finally:
+        browser.close()
+        playwright.stop()
+        shutil.rmtree(fixture_dir, ignore_errors=True)

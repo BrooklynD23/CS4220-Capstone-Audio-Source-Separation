@@ -99,17 +99,27 @@ const elements = {
   sampleWidth: document.getElementById('sample-width'),
   stagesList: document.getElementById('stages-list'),
   compareCanvas: document.getElementById('compare-canvas'),
+  compareDualBoard: document.getElementById('compare-dual-board'),
+  compareDualColumns: document.getElementById('compare-dual-columns'),
+  compareDualLeftRole: document.getElementById('compare-dual-left-role'),
+  compareDualLeftTotal: document.getElementById('compare-dual-left-total'),
+  compareDualRightRole: document.getElementById('compare-dual-right-role'),
+  compareDualRightTotal: document.getElementById('compare-dual-right-total'),
+  compareDualSpeedup: document.getElementById('compare-dual-speedup'),
   stageBoard: document.getElementById('stage-board'),
   stageBoardCaption: document.getElementById('stage-board-caption'),
   finalStemsLabel: document.getElementById('final-stems-label'),
   finalStemsDetails: document.getElementById('final-stems-details'),
+  finalStemsStrip: document.querySelector('.final-stems-strip'),
   runtimeHealthText: document.getElementById('runtime-health-text'),
   runtimeSourceText: document.getElementById('runtime-source-text'),
 };
 
 const compareState = {
   artifact: null,
+  artifact2: null,
   artifactToken: '—',
+  artifactToken2: '—',
   activeMode: 'side-by-side',
   lastModeMessage: 'Awaiting a loaded artifact.',
   audioElement: null,
@@ -194,6 +204,11 @@ function setStateValue(node, value) {
 }
 
 function setEmptyState() {
+  compareState.artifact = null;
+  compareState.artifact2 = null;
+  compareState.artifactToken = '—';
+  compareState.artifactToken2 = '—';
+  setDualCompareVisibility(false);
   setText(elements.sourceKind, emptyState.source.kind);
   setText(elements.sourceLabel, emptyState.source.label);
   setText(elements.sourceReference, emptyState.source.reference);
@@ -554,6 +569,235 @@ function buildStageDetails(stages, stageTimings) {
   });
 }
 
+function deviceLabelForArtifact(artifact, fallbackLabel) {
+  const deviceUsed = String(artifact.provenance.deviceUsed || '').toLowerCase();
+  if (deviceUsed.startsWith('cpu')) {
+    return 'CPU';
+  }
+  if (deviceUsed.startsWith('gpu') || deviceUsed.includes('cuda')) {
+    return 'GPU';
+  }
+  return fallbackLabel;
+}
+
+function formatTotalTiming(totalMs) {
+  return `${totalMs.toFixed(2)} ms total`;
+}
+
+function formatSpeedup(referenceArtifact, comparisonArtifact) {
+  if (comparisonArtifact.timing.total <= 0) {
+    return 'Speedup unavailable';
+  }
+
+  const speedup = referenceArtifact.timing.total / comparisonArtifact.timing.total;
+  return `GPU is ${speedup.toFixed(1)}× faster`;
+}
+
+function updateArtifactSummaryPanels(artifact) {
+  compareState.artifact = artifact;
+  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp ?? '—'}`;
+  setBanner(`Loaded ${artifact.loadedPath} — source ${artifact.source.kind} (${artifact.source.reference})`, {
+    type: 'status',
+  });
+  setText(elements.selectedFile, `Loaded file: ${artifact.loadedPath}`);
+  setText(elements.sourceKind, artifact.source.kind);
+  setText(elements.sourceLabel, artifact.source.label);
+  setText(elements.sourceReference, artifact.source.reference);
+  setText(elements.sourceMetadata, JSON.stringify(artifact.source.metadata, null, 2) || '—');
+  setText(elements.artifactPath, artifact.loadedPath);
+
+  setText(elements.compareMode, compareState.activeMode);
+  setText(elements.compareModeTitle, MODE_CONFIG[compareState.activeMode].title);
+  setText(elements.compareModeDescription, MODE_CONFIG[compareState.activeMode].description);
+  setText(elements.compareToken, compareState.artifactToken);
+  setStateValue(elements.compareHealth, artifact.health.state);
+  setText(elements.runtimeHealthText, `${artifact.health.state} — ${artifact.health.reason}`);
+  setText(elements.runtimeSourceText, artifact.source.label);
+
+  setStateValue(elements.healthState, artifact.health.state);
+  setText(elements.healthReason, artifact.health.reason);
+  setText(elements.requestedModelPath, artifact.health.requestedModelPath);
+  setText(elements.modelPath, artifact.health.modelPath);
+  setText(elements.fallbackApplied, artifact.health.fallbackApplied ? 'Yes' : 'No');
+
+  setText(elements.timingStft, `${artifact.timing.stft.toFixed(2)} ms`);
+  setText(elements.timingInfer, `${artifact.timing.infer.toFixed(2)} ms`);
+  setText(elements.timingIstft, `${artifact.timing.istft.toFixed(2)} ms`);
+  setText(elements.timingTotal, `${artifact.timing.total.toFixed(2)} ms`);
+  setText(elements.timingChunk, `${artifact.timing.chunk.toFixed(2)} s`);
+  setText(elements.sampleRate, `${artifact.timing.sampleRate.toLocaleString()} Hz`);
+
+  setText(elements.stemVocals, artifact.stems.vocals);
+  setText(elements.stemDrums, artifact.stems.drums);
+  setText(elements.stemBass, artifact.stems.bass);
+  setText(elements.stemOther, artifact.stems.other);
+  setText(elements.queueDepth, String(artifact.stems.queueDepth));
+  setText(elements.dropCount, String(artifact.stems.dropCount));
+
+  setText(elements.inputPath, artifact.provenance.input);
+  setText(elements.status, artifact.provenance.status);
+  setText(elements.timestamp, artifact.provenance.timestamp);
+  setText(elements.chunkIndex, String(artifact.provenance.chunkIndex));
+  setText(elements.deviceRequested, artifact.provenance.deviceRequested);
+  setText(elements.deviceUsed, artifact.provenance.deviceUsed);
+  setText(elements.mode, artifact.provenance.mode);
+  setText(elements.clockSource, artifact.provenance.clockSource);
+  setText(elements.clockFallback, artifact.provenance.clockFallback ? 'Yes' : 'No');
+  setText(elements.samplesProcessed, artifact.provenance.samplesProcessed.toLocaleString());
+  setText(elements.channels, String(artifact.provenance.channels));
+  setText(elements.sampleWidth, `${artifact.provenance.sampleWidth} byte${artifact.provenance.sampleWidth === 1 ? '' : 's'}`);
+  renderStages(artifact.provenance.stages, artifact.provenance.stageTimings);
+  syncModeButtons();
+}
+
+function setDualCompareVisibility(isDual) {
+  elements.compareDualBoard.classList.toggle('is-hidden', !isDual);
+  elements.stageBoard.classList.toggle('is-hidden', isDual);
+  elements.finalStemsStrip.classList.toggle('is-hidden', isDual);
+}
+
+function renderArtifactColumn(artifact, roleLabel) {
+  const column = document.createElement('article');
+  column.className = 'compare-dual-column';
+  column.dataset.role = roleLabel.toLowerCase();
+  column.dataset.testid = 'compare-dual-column';
+  column.innerHTML = `
+    <header class="compare-dual-column-header">
+      <p class="compare-card-label">${roleLabel}</p>
+      <h4>${artifact.source.kind}</h4>
+      <p class="compare-dual-column-subtitle">${artifact.source.label}</p>
+      <dl class="compare-dual-column-metrics">
+        <div>
+          <dt>Total</dt>
+          <dd>${formatTotalTiming(artifact.timing.total)}</dd>
+        </div>
+        <div>
+          <dt>Health</dt>
+          <dd>${artifact.health.state}</dd>
+        </div>
+        <div>
+          <dt>Device</dt>
+          <dd>${artifact.provenance.deviceUsed}</dd>
+        </div>
+        <div>
+          <dt>Stages</dt>
+          <dd>${artifact.compare.stageDetails.length}</dd>
+        </div>
+      </dl>
+    </header>
+  `;
+
+  const stageShell = document.createElement('div');
+  stageShell.className = `compare-stage-shell compare-stage-shell--${compareState.activeMode} compare-stage-shell--compact`;
+  if (compareState.activeMode === 'side-by-side') {
+    stageShell.appendChild(buildStageGrid(artifact.compare.stageDetails));
+  } else if (compareState.activeMode === 'overlay') {
+    stageShell.appendChild(buildOverlayStageStack(artifact.compare.stageDetails));
+  } else {
+    stageShell.appendChild(buildTimelineStageList(artifact.compare.stageDetails));
+  }
+  column.appendChild(stageShell);
+
+  const stemsCard = document.createElement('section');
+  stemsCard.className = 'compare-stems-card compare-stems-card--compact';
+  stemsCard.innerHTML = `
+    <div class="compare-stems-copy">
+      <p class="compare-card-label">${roleLabel} stems</p>
+      <h3>${artifact.source.kind === 'video-audio' ? 'Audio-first extraction' : 'Final separation outputs'}</h3>
+      <p>${[
+        `Vocals: ${artifact.stems.vocals}`,
+        `Drums: ${artifact.stems.drums}`,
+        `Bass: ${artifact.stems.bass}`,
+        `Other: ${artifact.stems.other}`,
+        `Queue depth: ${artifact.stems.queueDepth}`,
+        `Drop count: ${artifact.stems.dropCount}`,
+      ].join(' • ')}</p>
+    </div>
+  `;
+  column.appendChild(stemsCard);
+  return column;
+}
+
+function renderDualComparison(primaryArtifact, secondaryArtifact) {
+  const leftArtifact = deviceLabelForArtifact(primaryArtifact, 'CPU') === 'CPU' ? primaryArtifact : secondaryArtifact;
+  const rightArtifact = deviceLabelForArtifact(secondaryArtifact, 'GPU') === 'GPU' ? secondaryArtifact : primaryArtifact;
+  const primaryLabel = deviceLabelForArtifact(leftArtifact, 'CPU');
+  const secondaryLabel = deviceLabelForArtifact(rightArtifact, 'GPU');
+
+  compareState.artifact = leftArtifact;
+  compareState.artifact2 = rightArtifact;
+  compareState.artifactToken = `${leftArtifact.loadedPath} :: ${leftArtifact.timestamp ?? '—'}`;
+  compareState.artifactToken2 = `${rightArtifact.loadedPath} :: ${rightArtifact.timestamp ?? '—'}`;
+
+  setBanner(
+    `Loaded comparison artifacts: ${leftArtifact.loadedPath} (${primaryLabel}) and ${rightArtifact.loadedPath} (${secondaryLabel}).`,
+    { type: 'status' },
+  );
+  setText(elements.selectedFile, `Loaded files: ${leftArtifact.loadedPath} vs ${rightArtifact.loadedPath}`);
+  setText(elements.sourceKind, `${primaryLabel} / ${secondaryLabel}`);
+  setText(elements.sourceLabel, `${leftArtifact.source.label} vs ${rightArtifact.source.label}`);
+  setText(elements.sourceReference, `${leftArtifact.source.reference} vs ${rightArtifact.source.reference}`);
+  setText(elements.sourceMetadata, 'Comparison mode renders both artifacts in parallel.');
+  setText(elements.artifactPath, `${leftArtifact.loadedPath} vs ${rightArtifact.loadedPath}`);
+
+  setText(elements.compareMode, `${compareState.activeMode} + compare`);
+  setText(elements.compareModeTitle, 'Dual artifact compare');
+  setText(elements.compareModeDescription, 'CPU and GPU artifacts are rendered in parallel for timing comparison.');
+  setText(elements.compareToken, `${compareState.artifactToken} | ${compareState.artifactToken2}`);
+  setStateValue(elements.compareHealth, leftArtifact.health.state === rightArtifact.health.state ? leftArtifact.health.state : 'degraded');
+  setText(elements.runtimeHealthText, `${leftArtifact.health.state} — ${leftArtifact.health.reason} | ${rightArtifact.health.state} — ${rightArtifact.health.reason}`);
+  setText(elements.runtimeSourceText, `${primaryLabel} vs ${secondaryLabel}`);
+
+  setStateValue(elements.healthState, leftArtifact.health.state);
+  setText(elements.healthReason, `${leftArtifact.health.reason} / ${rightArtifact.health.reason}`);
+  setText(elements.requestedModelPath, `${leftArtifact.health.requestedModelPath} / ${rightArtifact.health.requestedModelPath}`);
+  setText(elements.modelPath, `${leftArtifact.health.modelPath} / ${rightArtifact.health.modelPath}`);
+  setText(elements.fallbackApplied, `${leftArtifact.health.fallbackApplied ? 'CPU yes' : 'CPU no'} / ${rightArtifact.health.fallbackApplied ? 'GPU yes' : 'GPU no'}`);
+
+  setText(elements.timingStft, `${leftArtifact.timing.stft.toFixed(2)} ms / ${rightArtifact.timing.stft.toFixed(2)} ms`);
+  setText(elements.timingInfer, `${leftArtifact.timing.infer.toFixed(2)} ms / ${rightArtifact.timing.infer.toFixed(2)} ms`);
+  setText(elements.timingIstft, `${leftArtifact.timing.istft.toFixed(2)} ms / ${rightArtifact.timing.istft.toFixed(2)} ms`);
+  setText(elements.timingTotal, `${leftArtifact.timing.total.toFixed(2)} ms / ${rightArtifact.timing.total.toFixed(2)} ms`);
+  setText(elements.timingChunk, `${leftArtifact.timing.chunk.toFixed(2)} s / ${rightArtifact.timing.chunk.toFixed(2)} s`);
+  setText(elements.sampleRate, `${leftArtifact.timing.sampleRate.toLocaleString()} Hz / ${rightArtifact.timing.sampleRate.toLocaleString()} Hz`);
+
+  setText(elements.stemVocals, `${leftArtifact.stems.vocals} / ${rightArtifact.stems.vocals}`);
+  setText(elements.stemDrums, `${leftArtifact.stems.drums} / ${rightArtifact.stems.drums}`);
+  setText(elements.stemBass, `${leftArtifact.stems.bass} / ${rightArtifact.stems.bass}`);
+  setText(elements.stemOther, `${leftArtifact.stems.other} / ${rightArtifact.stems.other}`);
+  setText(elements.queueDepth, `${leftArtifact.stems.queueDepth} / ${rightArtifact.stems.queueDepth}`);
+  setText(elements.dropCount, `${leftArtifact.stems.dropCount} / ${rightArtifact.stems.dropCount}`);
+
+  setText(elements.inputPath, `${leftArtifact.provenance.input} / ${rightArtifact.provenance.input}`);
+  setText(elements.status, `${leftArtifact.provenance.status} / ${rightArtifact.provenance.status}`);
+  setText(elements.timestamp, `${leftArtifact.provenance.timestamp} / ${rightArtifact.provenance.timestamp}`);
+  setText(elements.chunkIndex, `${leftArtifact.provenance.chunkIndex} / ${rightArtifact.provenance.chunkIndex}`);
+  setText(elements.deviceRequested, `${leftArtifact.provenance.deviceRequested} / ${rightArtifact.provenance.deviceRequested}`);
+  setText(elements.deviceUsed, `${leftArtifact.provenance.deviceUsed} / ${rightArtifact.provenance.deviceUsed}`);
+  setText(elements.mode, `${leftArtifact.provenance.mode} / ${rightArtifact.provenance.mode}`);
+  setText(elements.clockSource, `${leftArtifact.provenance.clockSource} / ${rightArtifact.provenance.clockSource}`);
+  setText(elements.clockFallback, `${leftArtifact.provenance.clockFallback ? 'Yes' : 'No'} / ${rightArtifact.provenance.clockFallback ? 'Yes' : 'No'}`);
+  setText(elements.samplesProcessed, `${leftArtifact.provenance.samplesProcessed.toLocaleString()} / ${rightArtifact.provenance.samplesProcessed.toLocaleString()}`);
+  setText(elements.channels, `${leftArtifact.provenance.channels} / ${rightArtifact.provenance.channels}`);
+  setText(elements.sampleWidth, `${leftArtifact.provenance.sampleWidth} / ${rightArtifact.provenance.sampleWidth} bytes`);
+
+  setDualCompareVisibility(true);
+  elements.compareDualLeftRole.textContent = primaryLabel;
+  elements.compareDualLeftTotal.textContent = formatTotalTiming(leftArtifact.timing.total);
+  elements.compareDualRightRole.textContent = secondaryLabel;
+  elements.compareDualRightTotal.textContent = formatTotalTiming(rightArtifact.timing.total);
+  elements.compareDualSpeedup.textContent = formatSpeedup(leftArtifact, rightArtifact);
+
+  elements.compareDualColumns.innerHTML = '';
+  elements.compareDualColumns.appendChild(renderArtifactColumn(leftArtifact, primaryLabel));
+  elements.compareDualColumns.appendChild(renderArtifactColumn(rightArtifact, secondaryLabel));
+
+  setText(elements.finalStemsLabel, 'Comparison stems');
+  setText(elements.finalStemsDetails, `${primaryLabel}: ${formatTotalTiming(leftArtifact.timing.total)} | ${secondaryLabel}: ${formatTotalTiming(rightArtifact.timing.total)} | ${formatSpeedup(leftArtifact, rightArtifact)}`);
+  syncModeButtons();
+  compareState.lastModeMessage = `Loaded ${leftArtifact.loadedPath} and ${rightArtifact.loadedPath} in ${compareState.activeMode} mode.`;
+}
+
 function normalizeArtifact(payload, loadedPath) {
   const root = expectObject(payload, 'Artifact root');
   const source = expectObject(root.source, 'source');
@@ -647,81 +891,58 @@ function normalizeArtifact(payload, loadedPath) {
 }
 
 function renderArtifact(artifact) {
-  compareState.artifact = artifact;
-  compareState.artifactToken = `${artifact.loadedPath} :: ${artifact.timestamp ?? '—'}`;
-  setBanner(`Loaded ${artifact.loadedPath} — source ${artifact.source.kind} (${artifact.source.reference})`, {
-    type: 'status',
-  });
-  setText(elements.selectedFile, `Loaded file: ${artifact.loadedPath}`);
-  setText(elements.sourceKind, artifact.source.kind);
-  setText(elements.sourceLabel, artifact.source.label);
-  setText(elements.sourceReference, artifact.source.reference);
-  setText(elements.sourceMetadata, JSON.stringify(artifact.source.metadata, null, 2) || '—');
-  setText(elements.artifactPath, artifact.loadedPath);
-
-  setText(elements.compareMode, compareState.activeMode);
-  setText(elements.compareModeTitle, MODE_CONFIG[compareState.activeMode].title);
-  setText(elements.compareModeDescription, MODE_CONFIG[compareState.activeMode].description);
-  setText(elements.compareToken, compareState.artifactToken);
-  setStateValue(elements.compareHealth, artifact.health.state);
-  setText(elements.runtimeHealthText, `${artifact.health.state} — ${artifact.health.reason}`);
-  setText(elements.runtimeSourceText, artifact.source.label);
-
-  setStateValue(elements.healthState, artifact.health.state);
-  setText(elements.healthReason, artifact.health.reason);
-  setText(elements.requestedModelPath, artifact.health.requestedModelPath);
-  setText(elements.modelPath, artifact.health.modelPath);
-  setText(elements.fallbackApplied, artifact.health.fallbackApplied ? 'Yes' : 'No');
-
-  setText(elements.timingStft, `${artifact.timing.stft.toFixed(2)} ms`);
-  setText(elements.timingInfer, `${artifact.timing.infer.toFixed(2)} ms`);
-  setText(elements.timingIstft, `${artifact.timing.istft.toFixed(2)} ms`);
-  setText(elements.timingTotal, `${artifact.timing.total.toFixed(2)} ms`);
-  setText(elements.timingChunk, `${artifact.timing.chunk.toFixed(2)} s`);
-  setText(elements.sampleRate, `${artifact.timing.sampleRate.toLocaleString()} Hz`);
-
-  setText(elements.stemVocals, artifact.stems.vocals);
-  setText(elements.stemDrums, artifact.stems.drums);
-  setText(elements.stemBass, artifact.stems.bass);
-  setText(elements.stemOther, artifact.stems.other);
-  setText(elements.queueDepth, String(artifact.stems.queueDepth));
-  setText(elements.dropCount, String(artifact.stems.dropCount));
-
-  setText(elements.inputPath, artifact.provenance.input);
-  setText(elements.status, artifact.provenance.status);
-  setText(elements.timestamp, artifact.provenance.timestamp);
-  setText(elements.chunkIndex, String(artifact.provenance.chunkIndex));
-  setText(elements.deviceRequested, artifact.provenance.deviceRequested);
-  setText(elements.deviceUsed, artifact.provenance.deviceUsed);
-  setText(elements.mode, artifact.provenance.mode);
-  setText(elements.clockSource, artifact.provenance.clockSource);
-  setText(elements.clockFallback, artifact.provenance.clockFallback ? 'Yes' : 'No');
-  setText(elements.samplesProcessed, artifact.provenance.samplesProcessed.toLocaleString());
-  setText(elements.channels, String(artifact.provenance.channels));
-  setText(elements.sampleWidth, `${artifact.provenance.sampleWidth} byte${artifact.provenance.sampleWidth === 1 ? '' : 's'}`);
-  renderStages(artifact.provenance.stages, artifact.provenance.stageTimings);
+  compareState.artifact2 = null;
+  compareState.artifactToken2 = '—';
+  setDualCompareVisibility(false);
+  updateArtifactSummaryPanels(artifact);
   renderCompareCanvas(artifact);
-  syncModeButtons();
   compareState.lastModeMessage = `Loaded ${artifact.loadedPath} in ${compareState.activeMode} mode.`;
 }
 
-function renderCompareCanvas(artifact) {
+function renderCompareCanvas(artifact = compareState.artifact) {
   const config = MODE_CONFIG[compareState.activeMode];
   elements.compareCanvas.dataset.mode = compareState.activeMode;
+  const isDual = Boolean(compareState.artifact && compareState.artifact2);
   elements.compareCanvas.dataset.hasArtifact = artifact ? 'true' : 'false';
+  elements.compareCanvas.dataset.layout = isDual ? 'dual' : compareState.activeMode;
   setText(elements.stageBoardCaption, artifact
-    ? `The same loaded artifact is shown through the ${config.title.toLowerCase()} layout.`
+    ? (isDual
+      ? 'CPU and GPU artifacts are shown through the same compare mode.'
+      : `The same loaded artifact is shown through the ${config.title.toLowerCase()} layout.`)
     : 'Load an artifact to compare the fixed stage showcase.');
 
   if (!artifact) {
+    setDualCompareVisibility(false);
     elements.stageBoard.innerHTML = `
       <div class="compare-empty-state" data-testid="compare-empty-state">
         <p>No artifact loaded yet.</p>
         <p>Select a JSON file to reveal the stage showcase, final stems, and runtime metadata.</p>
       </div>
     `;
+    elements.compareDualColumns.innerHTML = '';
+    elements.compareDualLeftRole.textContent = 'CPU';
+    elements.compareDualLeftTotal.textContent = '—';
+    elements.compareDualRightRole.textContent = 'GPU';
+    elements.compareDualRightTotal.textContent = '—';
+    elements.compareDualSpeedup.textContent = '—';
     setText(elements.finalStemsLabel, 'Final stems');
     setText(elements.finalStemsDetails, 'Waiting on a loaded artifact.');
+    return;
+  }
+
+  if (isDual) {
+    setDualCompareVisibility(true);
+    elements.stageBoard.innerHTML = '';
+    elements.compareDualColumns.innerHTML = '';
+    elements.compareDualColumns.appendChild(renderArtifactColumn(compareState.artifact, deviceLabelForArtifact(compareState.artifact, 'CPU')));
+    elements.compareDualColumns.appendChild(renderArtifactColumn(compareState.artifact2, deviceLabelForArtifact(compareState.artifact2, 'GPU')));
+    elements.compareDualLeftRole.textContent = deviceLabelForArtifact(compareState.artifact, 'CPU');
+    elements.compareDualLeftTotal.textContent = formatTotalTiming(compareState.artifact.timing.total);
+    elements.compareDualRightRole.textContent = deviceLabelForArtifact(compareState.artifact2, 'GPU');
+    elements.compareDualRightTotal.textContent = formatTotalTiming(compareState.artifact2.timing.total);
+    elements.compareDualSpeedup.textContent = formatSpeedup(compareState.artifact, compareState.artifact2);
+    setText(elements.finalStemsLabel, 'Comparison stems');
+    setText(elements.finalStemsDetails, `${deviceLabelForArtifact(compareState.artifact, 'CPU')}: ${formatTotalTiming(compareState.artifact.timing.total)} | ${deviceLabelForArtifact(compareState.artifact2, 'GPU')}: ${formatTotalTiming(compareState.artifact2.timing.total)} | ${formatSpeedup(compareState.artifact, compareState.artifact2)}`);
     return;
   }
 
@@ -867,17 +1088,28 @@ function setCompareMode(nextMode) {
   const normalizedMode = MODE_CONFIG[nextMode] ? nextMode : 'side-by-side';
   const wasInvalid = normalizedMode !== nextMode;
   compareState.activeMode = normalizedMode;
-  setText(elements.compareMode, compareState.activeMode);
-  setText(elements.compareModeTitle, MODE_CONFIG[compareState.activeMode].title);
-  setText(elements.compareModeDescription, MODE_CONFIG[compareState.activeMode].description);
   renderCompareCanvas(compareState.artifact);
+  if (compareState.artifact2) {
+    setText(elements.compareMode, `${compareState.activeMode} + compare`);
+    setText(elements.compareModeTitle, 'Dual artifact compare');
+    setText(elements.compareModeDescription, 'CPU and GPU artifacts are rendered in parallel for timing comparison.');
+  } else {
+    setText(elements.compareMode, compareState.activeMode);
+    setText(elements.compareModeTitle, MODE_CONFIG[compareState.activeMode].title);
+    setText(elements.compareModeDescription, MODE_CONFIG[compareState.activeMode].description);
+  }
   syncModeButtons();
   if (wasInvalid) {
     setBanner(`Unsupported compare mode "${nextMode}" fell back to side-by-side.`, { type: 'error' });
     return;
   }
 
-  if (compareState.artifact) {
+  if (compareState.artifact2) {
+    setBanner(
+      `Loaded comparison artifacts in ${compareState.activeMode} mode.`,
+      { type: 'status' },
+    );
+  } else if (compareState.artifact) {
     setBanner(`Loaded ${compareState.artifact.loadedPath} in ${compareState.activeMode} mode.`, { type: 'status' });
   } else {
     setBanner('Awaiting a loaded artifact.', { type: 'status' });
@@ -887,8 +1119,6 @@ function setCompareMode(nextMode) {
 async function loadArtifactFromFile() {
   const file = elements.fileInput.files?.[0];
   if (!file) {
-    compareState.artifact = null;
-    compareState.artifactToken = '—';
     setEmptyState();
     setBanner('Select a JSON artifact before loading.', { type: 'error' });
     return;
@@ -924,6 +1154,8 @@ function resolveArtifactUrl(artifactPath) {
 }
 
 async function loadArtifactFromUrl(artifactPath) {
+  compareState.artifact2 = null;
+  compareState.artifactToken2 = '—';
   const resolvedUrl = resolveArtifactUrl(artifactPath);
   const loadedPath = resolvedUrl.pathname.replace(/^\/+/, '') || resolvedUrl.pathname;
 
@@ -938,10 +1170,71 @@ async function loadArtifactFromUrl(artifactPath) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!compareState.artifact) {
-      compareState.artifactToken = '—';
       setEmptyState();
     }
     setBanner(`Failed to preload artifact: ${message}`, { type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadComparisonFromUrls(artifactPath, artifactPath2) {
+  setLoading(true);
+  compareState.artifact2 = null;
+  compareState.artifactToken2 = '—';
+  try {
+    const [artifactOne, artifactTwo] = await Promise.all([
+      (async () => {
+        const resolvedUrl = resolveArtifactUrl(artifactPath);
+        const loadedPath = resolvedUrl.pathname.replace(/^\/+/, '') || resolvedUrl.pathname;
+        const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`artifact request failed with status ${response.status}`);
+        }
+        return normalizeArtifact(await response.json(), loadedPath);
+      })(),
+      (async () => {
+        const resolvedUrl = resolveArtifactUrl(artifactPath2);
+        const loadedPath = resolvedUrl.pathname.replace(/^\/+/, '') || resolvedUrl.pathname;
+        const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`artifact2 request failed with status ${response.status}`);
+        }
+        return normalizeArtifact(await response.json(), loadedPath);
+      })(),
+    ]);
+
+    const artifactOneLabel = deviceLabelForArtifact(artifactOne, 'CPU');
+    const artifactTwoLabel = deviceLabelForArtifact(artifactTwo, 'GPU');
+    const primaryArtifact = artifactOneLabel === 'CPU' ? artifactOne : artifactTwo;
+    const secondaryArtifact = artifactTwoLabel === 'GPU' ? artifactTwo : artifactOne;
+    const primaryLabel = deviceLabelForArtifact(primaryArtifact, 'CPU');
+    const secondaryLabel = deviceLabelForArtifact(secondaryArtifact, 'GPU');
+
+    compareState.artifact = primaryArtifact;
+    compareState.artifact2 = secondaryArtifact;
+    compareState.artifactToken = `${primaryArtifact.loadedPath} :: ${primaryArtifact.timestamp ?? '—'}`;
+    compareState.artifactToken2 = `${secondaryArtifact.loadedPath} :: ${secondaryArtifact.timestamp ?? '—'}`;
+    updateArtifactSummaryPanels(primaryArtifact);
+    renderCompareCanvas(primaryArtifact);
+    setBanner(
+      `Loaded comparison artifacts: ${primaryArtifact.loadedPath} (${primaryLabel}) and ${secondaryArtifact.loadedPath} (${secondaryLabel}).`,
+      { type: 'status' },
+    );
+    setText(elements.compareMode, `${compareState.activeMode} + compare`);
+    setText(elements.compareModeTitle, 'Dual artifact compare');
+    setText(elements.compareModeDescription, 'CPU and GPU artifacts are rendered in parallel for timing comparison.');
+    setText(elements.compareToken, `${compareState.artifactToken} | ${compareState.artifactToken2}`);
+    setText(elements.runtimeSourceText, `${primaryLabel} vs ${secondaryLabel}`);
+    setText(elements.finalStemsLabel, 'Comparison stems');
+    setText(elements.finalStemsDetails, `${primaryLabel}: ${formatTotalTiming(primaryArtifact.timing.total)} | ${secondaryLabel}: ${formatTotalTiming(secondaryArtifact.timing.total)} | ${formatSpeedup(primaryArtifact, secondaryArtifact)}`);
+    compareState.lastModeMessage = `Loaded ${primaryArtifact.loadedPath} and ${secondaryArtifact.loadedPath} in ${compareState.activeMode} mode.`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!compareState.artifact) {
+      setEmptyState();
+    }
+    setBanner(`Failed to preload comparison artifacts: ${message}`, { type: 'error' });
   } finally {
     setLoading(false);
   }
@@ -967,6 +1260,15 @@ function initialize() {
   setBanner('Awaiting a loaded artifact.', { type: 'status' });
 
   const preloadArtifact = new URLSearchParams(window.location.search).get('artifact');
+  const preloadArtifact2 = new URLSearchParams(window.location.search).get('artifact2');
+  if (preloadArtifact2 && !preloadArtifact) {
+    setBanner('artifact2 requires an artifact query parameter.', { type: 'error' });
+    return;
+  }
+  if (preloadArtifact && preloadArtifact2) {
+    void loadComparisonFromUrls(preloadArtifact, preloadArtifact2);
+    return;
+  }
   if (preloadArtifact) {
     void loadArtifactFromUrl(preloadArtifact);
   }

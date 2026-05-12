@@ -13,8 +13,14 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlunsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.ui.encode_artifact_path import encode_artifact_path
+
 DEFAULT_DIRECTORY = PROJECT_ROOT
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -81,6 +87,22 @@ class _FileField:
     def __init__(self, filename: str, data: bytes) -> None:
         self.filename = filename
         self.file: io.BytesIO = io.BytesIO(data)
+
+
+def _encode_compare_artifact(artifact: str | None) -> str | None:
+    if artifact is None:
+        return None
+    return encode_artifact_path(str(PROJECT_ROOT), artifact)
+
+
+def _build_compare_url(host: str, port: int, artifact: str | None, artifact2: str | None) -> str:
+    query_parts = []
+    if artifact is not None:
+        query_parts.append(f"artifact={artifact}")
+    if artifact2 is not None:
+        query_parts.append(f"artifact2={artifact2}")
+    query = "&".join(query_parts)
+    return urlunsplit(("http", f"{host}:{port}", "/ui/compare/", query, ""))
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -234,12 +256,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help=f"Port to listen on (default: {DEFAULT_PORT})")
     parser.add_argument("--directory", default=str(DEFAULT_DIRECTORY),
                         help="Directory to serve (default: repository root)")
+    parser.add_argument(
+        "--artifact",
+        default=None,
+        help="Optional artifact path to preload in the compare UI (must live inside the project root).",
+    )
+    parser.add_argument(
+        "--artifact2",
+        default=None,
+        help="Optional second artifact path to preload in the compare UI (must live inside the project root).",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     directory = Path(args.directory).resolve()
+
+    try:
+        artifact = _encode_compare_artifact(args.artifact)
+        artifact2 = _encode_compare_artifact(args.artifact2)
+    except ValueError as exc:
+        print(f"compare-demo: invalid artifact path — {exc}", file=sys.stderr)
+        return 2
 
     if not directory.exists():
         print(f"compare-demo: directory not found: {directory}", file=sys.stderr)
@@ -257,7 +296,8 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     host, port = server.server_address[:2]
-    print(f"compare-demo: serving {directory} at http://{host}:{port}/ui/compare/", flush=True)
+    compare_url = _build_compare_url(str(host), port, artifact, artifact2)
+    print(f"compare-demo: serving {directory} at {compare_url}", flush=True)
 
     try:
         server.serve_forever()

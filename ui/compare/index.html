@@ -213,6 +213,28 @@
           <p id="stage-board-caption">Load an artifact to reveal the compare layouts.</p>
         </div>
 
+        <section id="compare-dual-board" class="compare-dual-board is-hidden" aria-labelledby="compare-dual-heading" data-testid="compare-dual-board">
+          <div class="section-heading compare-dual-heading">
+            <h3 id="compare-dual-heading">CPU vs GPU timing view</h3>
+            <p>Timing header and stage layouts for the paired runtime artifacts.</p>
+          </div>
+          <div class="compare-dual-header" data-testid="compare-dual-header">
+            <div class="compare-dual-timing-card">
+              <p class="compare-dual-role" id="compare-dual-left-role" data-testid="compare-dual-left-role">CPU</p>
+              <strong id="compare-dual-left-total" data-testid="compare-dual-left-total">—</strong>
+            </div>
+            <div class="compare-dual-speedup-card">
+              <p class="compare-dual-speedup-label">Speedup</p>
+              <strong id="compare-dual-speedup" data-testid="compare-dual-speedup">—</strong>
+            </div>
+            <div class="compare-dual-timing-card compare-dual-timing-card--right">
+              <p class="compare-dual-role" id="compare-dual-right-role" data-testid="compare-dual-right-role">GPU</p>
+              <strong id="compare-dual-right-total" data-testid="compare-dual-right-total">—</strong>
+            </div>
+          </div>
+          <div id="compare-dual-columns" class="compare-dual-columns" data-testid="compare-dual-columns"></div>
+        </section>
+
         <div id="stage-board" class="compare-stage-board" data-testid="stage-board">
           <div class="compare-empty-state" data-testid="compare-empty-state">
             <p>No artifact loaded yet.</p>
@@ -220,7 +242,7 @@
           </div>
         </div>
 
-        <section class="final-stems-strip" aria-labelledby="final-stems-heading">
+        <section class="final-stems-strip" aria-labelledby="final-stems-heading" data-testid="final-stems-strip">
           <div class="section-heading compact">
             <h3 id="final-stems-heading">Final stems</h3>
             <p id="final-stems-label" data-testid="final-stems-label">Waiting on a loaded artifact.</p>
