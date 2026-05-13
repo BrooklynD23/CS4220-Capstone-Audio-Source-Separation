@@ -1,5 +1,9 @@
 # Video Fixture Policy
 
+The canonical checked-in fixture is **`demo_mix.mp4`** (small deterministic smoke clip referenced by the live CLI, verifiers, and Playwright/UI JSON fixtures).
+
+Some **synthetic UI JSON** under `tests/fixtures/ui/compare/` may cite `fixtures/video/demo_mix.mp4` for path consistency across machines.
+
 `fixtures/video/demo_mix.mp4` is a deterministic container fixture that carries the same synthetic audio bed used by the MP3 smoke path.
 
 ## Why this exists

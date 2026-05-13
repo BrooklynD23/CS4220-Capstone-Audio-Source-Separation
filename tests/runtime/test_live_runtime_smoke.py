@@ -86,7 +86,7 @@ def test_live_cli_full_mode_reports_missing_umx_runtime_as_actionable_artifact(m
     assert payload["metadata"]["mode"] == "full"
 
 
-def test_live_cli_smoke_writes_schema_valid_runtime_artifact_and_four_stems(tmp_path: Path) -> None:
+def test_live_cli_smoke_writes_schema_valid_runtime_artifact_and_mix_plus_four_stems(tmp_path: Path) -> None:
     output_dir = tmp_path / "smoke-run"
     artifact_path = output_dir / "live_runtime_result.json"
 
@@ -127,13 +127,20 @@ def test_live_cli_smoke_writes_schema_valid_runtime_artifact_and_four_stems(tmp_
     assert payload["stem_paths"]["drums"] == str(output_dir / "drums.wav")
     assert payload["stem_paths"]["bass"] == str(output_dir / "bass.wav")
     assert payload["stem_paths"]["other"] == str(output_dir / "other.wav")
+    assert (output_dir / "mix.wav").exists()
     assert (output_dir / "vocals.wav").exists()
     assert (output_dir / "drums.wav").exists()
     assert (output_dir / "bass.wav").exists()
     assert (output_dir / "other.wav").exists()
 
     stem_outputs = sorted(output_dir.glob("*.wav"))
-    assert [path.name for path in stem_outputs] == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
+    assert [path.name for path in stem_outputs] == [
+        "bass.wav",
+        "drums.wav",
+        "mix.wav",
+        "other.wav",
+        "vocals.wav",
+    ]
     assert all(path.stat().st_size > 0 for path in stem_outputs)
 
 
@@ -178,13 +185,14 @@ def test_live_cli_overload_reports_degraded_health_and_writes_stems(tmp_path: Pa
     assert payload["stem_paths"]["drums"] == str(output_dir / "drums.wav")
     assert payload["stem_paths"]["bass"] == str(output_dir / "bass.wav")
     assert payload["stem_paths"]["other"] == str(output_dir / "other.wav")
+    assert (output_dir / "mix.wav").exists()
     assert (output_dir / "vocals.wav").exists()
     assert (output_dir / "drums.wav").exists()
     assert (output_dir / "bass.wav").exists()
     assert (output_dir / "other.wav").exists()
 
 
-def test_live_cli_model_path_fallback_writes_schema_valid_runtime_artifact_and_four_stems(
+def test_live_cli_model_path_fallback_writes_schema_valid_runtime_artifact_and_mix_plus_four_stems(
     tmp_path: Path,
 ) -> None:
     output_dir = tmp_path / "fallback-run"
@@ -227,6 +235,7 @@ def test_live_cli_model_path_fallback_writes_schema_valid_runtime_artifact_and_f
     assert payload["stem_paths"]["drums"] == str(output_dir / "drums.wav")
     assert payload["stem_paths"]["bass"] == str(output_dir / "bass.wav")
     assert payload["stem_paths"]["other"] == str(output_dir / "other.wav")
+    assert (output_dir / "mix.wav").exists()
     assert (output_dir / "vocals.wav").exists()
     assert (output_dir / "drums.wav").exists()
     assert (output_dir / "bass.wav").exists()
@@ -261,10 +270,16 @@ def test_live_cli_can_rerun_into_the_same_output_dir(tmp_path: Path) -> None:
     assert payload["status"] == "ok"
     assert payload["source"]["kind"] == "mp3"
     assert payload["source"]["reference"] == str(FIXTURE_MP3)
-    assert sorted(path.name for path in output_dir.glob("*.wav")) == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
+    assert sorted(path.name for path in output_dir.glob("*.wav")) == [
+        "bass.wav",
+        "drums.wav",
+        "mix.wav",
+        "other.wav",
+        "vocals.wav",
+    ]
 
 
-def test_live_cli_video_audio_mode_writes_schema_valid_runtime_artifact_and_four_stems(tmp_path: Path) -> None:
+def test_live_cli_video_audio_mode_writes_schema_valid_runtime_artifact_and_mix_plus_four_stems(tmp_path: Path) -> None:
     output_dir = tmp_path / "video-run"
     artifact_path = output_dir / "live_runtime_result.json"
 
@@ -297,10 +312,18 @@ def test_live_cli_video_audio_mode_writes_schema_valid_runtime_artifact_and_four
     assert payload["stem_paths"]["drums"] == str(output_dir / "drums.wav")
     assert payload["stem_paths"]["bass"] == str(output_dir / "bass.wav")
     assert payload["stem_paths"]["other"] == str(output_dir / "other.wav")
-    assert sorted(path.name for path in output_dir.glob("*.wav")) == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
+    assert sorted(path.name for path in output_dir.glob("*.wav")) == [
+        "bass.wav",
+        "drums.wav",
+        "mix.wav",
+        "other.wav",
+        "vocals.wav",
+    ]
 
 
-def test_live_cli_mic_mode_with_fake_backend_writes_schema_valid_runtime_artifact_and_four_stems(tmp_path: Path) -> None:
+def test_live_cli_mic_mode_with_fake_backend_writes_schema_valid_runtime_artifact_and_mix_plus_four_stems(
+    tmp_path: Path,
+) -> None:
     output_dir = tmp_path / "mic-run"
     artifact_path = output_dir / "live_runtime_result.json"
 
@@ -338,7 +361,13 @@ def test_live_cli_mic_mode_with_fake_backend_writes_schema_valid_runtime_artifac
     assert payload["stem_paths"]["drums"] == str(output_dir / "drums.wav")
     assert payload["stem_paths"]["bass"] == str(output_dir / "bass.wav")
     assert payload["stem_paths"]["other"] == str(output_dir / "other.wav")
-    assert sorted(path.name for path in output_dir.glob("*.wav")) == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
+    assert sorted(path.name for path in output_dir.glob("*.wav")) == [
+        "bass.wav",
+        "drums.wav",
+        "mix.wav",
+        "other.wav",
+        "vocals.wav",
+    ]
 
 
 def test_live_cli_missing_input_reports_decode_failure_and_preserves_artifact(tmp_path: Path) -> None:
@@ -399,3 +428,71 @@ def test_live_cli_rejects_invalid_output_directory_and_keeps_artifact(tmp_path: 
     assert payload["fallback_applied"] is False
     assert payload["model_path"] == DEFAULT_MODEL_PATH
     assert "not writable" in str(payload["error_message"])
+
+
+def test_live_cli_full_mode_applies_measured_stage_timings(monkeypatch, tmp_path: Path) -> None:
+    """Full mode records UMX stage buckets on the artifact via stage_timings_override."""
+    import numpy as np
+
+    spec = importlib.util.spec_from_file_location("run_live_separation_timing", CLI_SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class FakeUmx:
+        @staticmethod
+        def resolve_device(_req: str) -> str:
+            return "cpu"
+
+        @staticmethod
+        def load_umxhq_separator(_d: str) -> object:
+            return object()
+
+        @staticmethod
+        def pcm_to_tensor(pcm: bytes):
+            import torch
+
+            n = max(2, len(pcm) // 4)
+            return torch.zeros(2, n, dtype=torch.float32)
+
+        @staticmethod
+        def separate_tensor(*_a, **_k):
+            from live_runtime.umx_separator import SeparationResult, SeparationTimings
+
+            stems = {
+                k: np.zeros((2, 16), dtype=np.float32) for k in ("vocals", "drums", "bass", "other")
+            }
+            return SeparationResult(
+                stems=stems,
+                sample_rate_hz=44100,
+                timings=SeparationTimings(1.5, 2.5, 3.5, 7.5),
+            )
+
+    monkeypatch.setattr(module, "_load_umx_runtime", lambda: FakeUmx)
+
+    output_dir = tmp_path / "full-stage-timings"
+
+    payload, exit_code, ingest_bundle = module._build_artifact(
+        source_mode="mp3",
+        input_path=FIXTURE_MP3,
+        output_dir=output_dir,
+        sample_rate_hz=22050,
+        chunk_duration_s=0.5,
+        max_queue_depth=64,
+        decode_timeout_s=30.0,
+        device_requested="cpu",
+        device_used="cpu",
+        mode="full",
+        model_path=DEFAULT_MODEL_PATH,
+        mic_backend="fake",
+        mic_device="fixture:mic-demo",
+        capture_duration_s=1.0,
+    )
+
+    assert exit_code == 0
+    assert ingest_bundle is not None
+    assert payload["stft_ms"] == 1.5
+    assert payload["infer_ms"] == 2.5
+    assert payload["istft_ms"] == 3.5
+    assert payload["total_ms"] == 7.5

@@ -24,6 +24,14 @@ dev = [
 mic = [
   "sounddevice==0.5.1",
 ]
+# Torch/audio wheels: install CUDA builds from PyTorch index (see launch.py) or `pip install -e .[gpu]`.
+gpu_launcher = [
+  "openunmix>=1.2.1",
+  "demucs==4.0.1",
+  "matplotlib>=3.8",
+  "librosa>=0.10",
+  "pynvml>=11.0",
+]
 gpu = [
   "torch>=2.0.0",
   "torchaudio>=2.0.0",
@@ -39,6 +47,7 @@ gpu = [
 minversion = "8.0"
 addopts = "-ra --strict-config --strict-markers --cov=live_runtime --cov=scripts --cov-fail-under=80"
 testpaths = ["tests"]
+norecursedirs = [".git", ".tox", "dist", "build", "*.egg", ".eggs", ".venv", ".gsd"]
 
 [tool.setuptools.packages.find]
 include = ["live_runtime*"]

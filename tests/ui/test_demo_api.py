@@ -3,7 +3,6 @@ from __future__ import annotations
 import http.client
 import json
 import sys
-import tempfile
 import threading
 from functools import partial
 from http.server import ThreadingHTTPServer
@@ -20,8 +19,8 @@ from scripts.ui.serve_compare_demo import CompareDemoHandler
 
 @pytest.fixture(scope="module")
 def demo_server():
-    tmpdir = tempfile.mkdtemp()
-    handler = partial(CompareDemoHandler, directory=tmpdir)
+    """Serve repo root so /api/separate can invoke scripts/live/run_live_separation.py."""
+    handler = partial(CompareDemoHandler, directory=str(PROJECT_ROOT))
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)

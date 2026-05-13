@@ -142,11 +142,13 @@ def build_live_runtime_result(
     model_path: str = DEFAULT_MODEL_PATH,
     stem_routing: StemRouting | None = None,
     infer_ms_override: float | None = None,
+    stage_timings_override: StageTimings | None = None,
 ) -> LiveRuntimeResult:
     """Compose the live runtime artifact from a pre-decoded source envelope.
 
-    Pass infer_ms_override to record real GPU inference time instead of the
-    default near-zero stub timings.
+    Pass ``stage_timings_override`` for full separation runs with measured
+    STFT / inference+post / ISTFT buckets. Otherwise pass ``infer_ms_override``
+    (or rely on defaults) for smoke-style stub timings.
     """
 
     _validate_chunk_duration(chunk_duration_s)
@@ -175,8 +177,19 @@ def build_live_runtime_result(
             other_path=DEFAULT_OTHER_PATH,
         )
 
-    effective_infer_ms = infer_ms_override if infer_ms_override is not None else chunk_ms
-    effective_total_ms = round(source_ingest.ingest_ms + effective_infer_ms + telemetry_ms, 6)
+    if stage_timings_override is not None:
+        stage_block = stage_timings_override
+    else:
+        effective_infer_ms = infer_ms_override if infer_ms_override is not None else chunk_ms
+        effective_total_ms = round(source_ingest.ingest_ms + effective_infer_ms + telemetry_ms, 6)
+        stage_block = StageTimings(
+            stft_ms=source_ingest.ingest_ms,
+            infer_ms=effective_infer_ms,
+            istft_ms=telemetry_ms,
+            total_ms=effective_total_ms,
+        )
+
+    effective_total_ms = stage_block.total_ms
 
     _log.info("live separation start source=%s mode=%s", source_ingest.source.reference, mode)
     health = _build_health_telemetry(
@@ -199,12 +212,7 @@ def build_live_runtime_result(
             chunk_duration_s=decoded.chunk_duration_s,
             chunk_index=last_chunk.chunk_index,
         ),
-        stage_timings=StageTimings(
-            stft_ms=source_ingest.ingest_ms,
-            infer_ms=effective_infer_ms,
-            istft_ms=telemetry_ms,
-            total_ms=effective_total_ms,
-        ),
+        stage_timings=stage_block,
         stem_routing=stem_routing,
         failure_state=_build_failure_state(
             status="ok",

@@ -1,4 +1,18 @@
 import { decodePcmWav, drawWaveform, drawSpectrogram } from '../shared/audio-render.js';
+import {
+  clearPersistedArtifactsRoot,
+  isArtifactsScopePickerSupported,
+  loadPersistedArtifactsRoot,
+  persistArtifactsFolderFromUser,
+  requestDirectoryReadAccess,
+  runScopedKindPicker,
+} from './fs-artifacts-scope.js';
+
+const LANE_PLAY_KEYS = ['input', 'vocals', 'drums', 'bass', 'other'];
+
+function lanePlayButton(lane) {
+  return document.querySelector(`[data-testid="lane-play-${lane}"]`);
+}
 
 const MODE_CONFIG = {
   'side-by-side': {
@@ -25,9 +39,14 @@ const STAGE_NOTES = {
 };
 
 const elements = {
+  uploadFile: document.getElementById('upload-file'),
+  uploadDevice: document.getElementById('upload-device'),
+  uploadSeparateBtn: document.getElementById('upload-separate-btn'),
+  uploadStatusLine: document.getElementById('upload-status-line'),
   fileInput: document.getElementById('artifact-file'),
   loadButton: document.getElementById('load-button'),
   benchmarkFileInput: document.getElementById('benchmark-file'),
+  benchmarkSelectedLine: document.getElementById('benchmark-selected-line'),
   loadBenchmarkButton: document.getElementById('load-benchmark-button'),
   benchmarkKindCpu: document.getElementById('benchmark-kind-cpu'),
   benchmarkKindGpu: document.getElementById('benchmark-kind-gpu'),
@@ -123,6 +142,16 @@ const compareState = {
   activeMode: 'side-by-side',
   lastModeMessage: 'Awaiting a loaded artifact.',
   audioElement: null,
+  laneUrls: {
+    input: null,
+    vocals: null,
+    drums: null,
+    bass: null,
+    other: null,
+  },
+  blobUrlsToRevoke: [],
+  activeLaneKey: null,
+  benchmarkLoaded: false,
 };
 
 window.__compareState = compareState;
@@ -259,6 +288,7 @@ function setEmptyState() {
   renderStages(['—']);
   renderCompareCanvas(null);
   syncModeButtons();
+  detachCompareAudioPlayback();
 }
 
 function setEmptyBenchmarkState() {
@@ -267,6 +297,7 @@ function setEmptyBenchmarkState() {
   setText(elements.benchmarkCpuMs, '—');
   setText(elements.benchmarkGpuMs, '—');
   setText(elements.benchmarkDelta, '—');
+  setText(elements.benchmarkSelectedLine, 'No benchmark JSON selected');
 }
 
 function renderStages(stages, stageTimings = {}) {
@@ -402,11 +433,336 @@ async function loadBenchmarkFromFile() {
     const payload = JSON.parse(await file.text());
     const comparison = normalizeBenchmarkPayload(payload);
     renderBenchmarkComparison(comparison);
+    compareState.benchmarkLoaded = true;
     setBanner(`Loaded benchmark evidence ${file.name}.`, { type: 'status' });
+    syncBenchmarkChosenLabel();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setBanner(`Failed to parse or validate benchmark artifact: ${message}`, { type: 'error' });
   }
+}
+
+function setAudienceMode(isPreloaded) {
+  document.body.dataset.mode = isPreloaded ? 'preloaded' : 'manual';
+}
+
+async function loadBenchmarkFromUrlSilent(resolvedUrlOrPath) {
+  let resolvedUrl;
+  try {
+    resolvedUrl = resolveArtifactUrl(resolvedUrlOrPath);
+  } catch {
+    return false;
+  }
+  try {
+    const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+    if (!response.ok) {
+      return false;
+    }
+    const payload = await response.json();
+    const comparison = normalizeBenchmarkPayload(payload);
+    renderBenchmarkComparison(comparison);
+    compareState.benchmarkLoaded = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseInputLaneBlobOnly() {
+  const prev = compareState.laneUrls.input;
+  if (prev && typeof prev === 'string' && prev.startsWith('blob:')) {
+    const idx = compareState.blobUrlsToRevoke.indexOf(prev);
+    if (idx >= 0) {
+      compareState.blobUrlsToRevoke.splice(idx, 1);
+    }
+    try {
+      URL.revokeObjectURL(prev);
+    } catch {
+      /* ignore */
+    }
+  }
+  compareState.laneUrls.input = null;
+  if (compareState.activeLaneKey === 'input') {
+    if (compareState.audioElement) {
+      compareState.audioElement.pause();
+      compareState.audioElement = null;
+    }
+    compareState.activeLaneKey = null;
+    setPlaybackUiStopped();
+  } else {
+    refreshLanePlayButtons();
+  }
+}
+
+function revokeLaneBlobUrls() {
+  for (const u of compareState.blobUrlsToRevoke) {
+    try {
+      URL.revokeObjectURL(u);
+    } catch {
+      /* ignore */
+    }
+  }
+  compareState.blobUrlsToRevoke = [];
+}
+
+function clearLaneUrlMap() {
+  compareState.laneUrls = {
+    input: null,
+    vocals: null,
+    drums: null,
+    bass: null,
+    other: null,
+  };
+}
+
+function refreshLanePlayButtons() {
+  for (const lane of LANE_PLAY_KEYS) {
+    const btn = lanePlayButton(lane);
+    if (!btn) {
+      continue;
+    }
+    const hasUrl = Boolean(compareState.laneUrls[lane]);
+    btn.disabled = !hasUrl;
+    if (!hasUrl || compareState.activeLaneKey !== lane) {
+      setText(btn, 'Play');
+      btn.setAttribute('aria-pressed', 'false');
+    }
+  }
+}
+
+function playbackUrlFromRepoPath(stemPath) {
+  const urlPath = stemPathToRepoUrlPath(stemPath);
+  return new URL(urlPath, `${window.location.origin}/`).toString();
+}
+
+function registerBlobLaneUrl(lane, objUrl) {
+  compareState.laneUrls[lane] = objUrl;
+  compareState.blobUrlsToRevoke.push(objUrl);
+  refreshLanePlayButtons();
+}
+
+function registerLaneUrl(lane, url) {
+  compareState.laneUrls[lane] = url;
+  refreshLanePlayButtons();
+}
+
+function setPlaybackUiStopped() {
+  setText(elements.playbackState, 'stopped');
+  setText(elements.playbackToggle, 'Play input');
+  elements.playbackToggle.setAttribute('aria-pressed', 'false');
+  for (const lane of LANE_PLAY_KEYS) {
+    const btn = lanePlayButton(lane);
+    if (!btn) {
+      continue;
+    }
+    setText(btn, 'Play');
+    btn.setAttribute('aria-pressed', 'false');
+  }
+  refreshLanePlayButtons();
+}
+
+function updatePlayingLaneUi(lane) {
+  setText(elements.playbackState, 'playing');
+  for (const k of LANE_PLAY_KEYS) {
+    const btn = lanePlayButton(k);
+    if (!btn) {
+      continue;
+    }
+    if (k === lane) {
+      setText(btn, 'Pause');
+      btn.setAttribute('aria-pressed', 'true');
+    } else {
+      setText(btn, 'Play');
+      btn.setAttribute('aria-pressed', 'false');
+    }
+  }
+  if (lane === 'input') {
+    setText(elements.playbackToggle, 'Pause input');
+    elements.playbackToggle.setAttribute('aria-pressed', 'true');
+  } else {
+    setText(elements.playbackToggle, 'Play input');
+    elements.playbackToggle.setAttribute('aria-pressed', 'false');
+  }
+}
+
+function updatePausedLaneUi(lane) {
+  setText(elements.playbackState, 'paused');
+  const btn = lanePlayButton(lane);
+  if (btn) {
+    setText(btn, 'Play');
+    btn.setAttribute('aria-pressed', 'false');
+  }
+  if (lane === 'input') {
+    setText(elements.playbackToggle, 'Play input');
+    elements.playbackToggle.setAttribute('aria-pressed', 'false');
+  }
+}
+
+const MEDIA_PLAY_EXTENSIONS = /\.(?:mp3|m4a|aac|ogg|flac|wav|mp4|webm|mov)(?:\?|$)/i;
+
+function clearInputWaveformVisualization() {
+  const emptySamples = new Float32Array(0);
+  drawWaveform(elements.waveformCanvases.input, emptySamples);
+  drawSpectrogram(elements.spectrogramCanvases.input, emptySamples);
+}
+
+function detachCompareAudioPlayback() {
+  if (compareState.audioElement) {
+    compareState.audioElement.pause();
+    compareState.audioElement = null;
+  }
+  compareState.activeLaneKey = null;
+  revokeLaneBlobUrls();
+  clearLaneUrlMap();
+  setPlaybackUiStopped();
+}
+
+function attachPlaybackEndedHandler(audio) {
+  audio.addEventListener('ended', () => {
+    compareState.audioElement = null;
+    compareState.activeLaneKey = null;
+    setPlaybackUiStopped();
+  });
+}
+
+/** When mix.wav/input.wav PCM fetch fails — bind `<audio>` to original media under artifacts/. */
+function deriveBrowserMediaInputPath(artifact) {
+  if (!artifact) {
+    return null;
+  }
+  const input = String(artifact.provenance?.input || '').trim();
+  if (!input || input.toLowerCase().endsWith('.wav')) {
+    return null;
+  }
+  const lower = input.toLowerCase();
+  if (!MEDIA_PLAY_EXTENSIONS.test(lower)) {
+    return null;
+  }
+  return input;
+}
+
+function bindPlaybackFromSameOriginArtifactsPath(rawRepoPath) {
+  let repoUrlPath;
+  try {
+    repoUrlPath = stemPathToRepoUrlPath(rawRepoPath);
+  } catch {
+    return false;
+  }
+  const resolvedUrl = new URL(repoUrlPath, `${window.location.origin}/`);
+  if (resolvedUrl.origin !== window.location.origin) {
+    return false;
+  }
+  releaseInputLaneBlobOnly();
+  registerLaneUrl('input', resolvedUrl.toString());
+  clearInputWaveformVisualization();
+  return true;
+}
+
+function deriveInputWavePathForArtifact(artifact) {
+  if (!artifact) {
+    return null;
+  }
+  const input = String(artifact.provenance?.input || '').trim();
+  if (input.toLowerCase().endsWith('.wav')) {
+    return input;
+  }
+  const vocals = String(artifact.stems?.vocals || '').trim().replace(/\\/g, '/');
+  const idx = vocals.lastIndexOf('/');
+  if (idx < 0) {
+    return null;
+  }
+  return `${vocals.slice(0, idx)}/mix.wav`;
+}
+
+async function autoLoadInputMixWaveform(artifact) {
+  if (!artifact) {
+    return;
+  }
+  const wavTry = deriveInputWavePathForArtifact(artifact);
+  if (wavTry) {
+    try {
+      const urlPath = stemPathToRepoUrlPath(wavTry);
+      const buf = await fetchWavArrayBuffer(urlPath);
+      const samples = decodePcmWav(buf);
+      drawWaveform(elements.waveformCanvases.input, samples);
+      drawSpectrogram(elements.spectrogramCanvases.input, samples);
+      releaseInputLaneBlobOnly();
+      const blob = new Blob([buf], { type: 'audio/wav' });
+      const objUrl = URL.createObjectURL(blob);
+      registerBlobLaneUrl('input', objUrl);
+      return;
+    } catch {
+      /* PCM path failed — browser media fallback below */
+    }
+  }
+
+  const mediaPath = deriveBrowserMediaInputPath(artifact);
+  if (mediaPath && bindPlaybackFromSameOriginArtifactsPath(mediaPath)) {
+    return;
+  }
+}
+
+async function finishPreloadExtras(benchmarkQuery) {
+  const benchPath = benchmarkQuery && benchmarkQuery.trim()
+    ? benchmarkQuery.trim()
+    : '/artifacts/bench/capstone_evidence_manifest.json';
+  await loadBenchmarkFromUrlSilent(benchPath);
+  try {
+    await autoLoadInputMixWaveform(compareState.artifact);
+  } catch {
+    /* optional input lane */
+  }
+}
+
+function artifactQueryPathFromApiResponse(artifactPath) {
+  const raw = String(artifactPath || '').trim().replace(/\\/g, '/');
+  if (!raw) {
+    return '';
+  }
+  const withSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  return `/ui/compare/?artifact=${encodeURIComponent(withSlash)}`;
+}
+
+async function runUploadSeparation() {
+  const file = elements.uploadFile.files?.[0];
+  if (!file) {
+    return;
+  }
+  elements.uploadSeparateBtn.disabled = true;
+  elements.uploadStatusLine.textContent = 'Separating…';
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('device', elements.uploadDevice.value);
+    const resp = await fetch('/api/separate', { method: 'POST', body: form });
+    const result = await resp.json();
+    if (!resp.ok) {
+      setBanner(`Upload separation failed: ${result.error ?? resp.statusText}`, { type: 'error' });
+      elements.uploadStatusLine.textContent = 'Separation failed.';
+      return;
+    }
+    const next = artifactQueryPathFromApiResponse(result.artifact_path);
+    if (next) {
+      window.location.assign(next);
+      return;
+    }
+    setBanner('Separation succeeded but server did not return artifact_path.', { type: 'error' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    setBanner(`Upload separation request failed: ${msg}`, { type: 'error' });
+    elements.uploadStatusLine.textContent = 'Request failed.';
+  } finally {
+    elements.uploadSeparateBtn.disabled = false;
+  }
+}
+
+function setupUploadControls() {
+  elements.uploadFile.addEventListener('change', () => {
+    const f = elements.uploadFile.files?.[0];
+    elements.uploadSeparateBtn.disabled = !f;
+    elements.uploadStatusLine.textContent = f ? `Selected: ${f.name}` : 'Awaiting file…';
+  });
+  elements.uploadSeparateBtn.addEventListener('click', () => void runUploadSeparation());
 }
 
 function stemKeyForFile(file) {
@@ -444,16 +800,11 @@ async function loadAudioWaveforms() {
       drawSpectrogram(elements.spectrogramCanvases[key], samples);
     }
 
-    if (compareState.audioElement) {
-      compareState.audioElement.pause();
-      URL.revokeObjectURL(compareState.audioElement.src);
+    detachCompareAudioPlayback();
+    registerBlobLaneUrl('input', URL.createObjectURL(inputFile));
+    for (const key of ['vocals', 'drums', 'bass', 'other']) {
+      registerBlobLaneUrl(key, URL.createObjectURL(stemsByKey[key]));
     }
-    compareState.audioElement = new Audio(URL.createObjectURL(inputFile));
-    compareState.audioElement.addEventListener('ended', () => {
-      setText(elements.playbackState, 'stopped');
-      setText(elements.playbackToggle, 'Play');
-      elements.playbackToggle.setAttribute('aria-pressed', 'false');
-    });
 
     setText(elements.audioFileCount, `${1 + stemFiles.length} files`);
     setBanner(`Loaded WAV assets for waveform inspection.`, { type: 'status' });
@@ -463,23 +814,103 @@ async function loadAudioWaveforms() {
   }
 }
 
-function togglePlayback() {
-  const audio = compareState.audioElement;
-  if (!audio) {
-    setBanner('Load WAV assets before using playback.', { type: 'error' });
+/** Map absolute or repo-relative stem path strings to a fetchable URL path on the demo server. */
+function stemPathToRepoUrlPath(stemPath) {
+  const raw = typeof stemPath === 'string' ? stemPath.trim() : '';
+  if (!raw) {
+    throw new Error('stem path is empty');
+  }
+  let normalized = raw.replace(/\\/g, '/');
+  const lower = normalized.toLowerCase();
+  const marker = 'artifacts/';
+  const idx = lower.indexOf(marker);
+  if (idx >= 0) {
+    normalized = normalized.slice(idx);
+  }
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    throw new Error('stem path could not be resolved under artifacts/');
+  }
+  return `/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+}
+
+async function fetchWavArrayBuffer(repoUrlPath) {
+  const resolvedUrl = new URL(repoUrlPath, `${window.location.origin}/`);
+  if (resolvedUrl.origin !== window.location.origin) {
+    throw new Error('stem URL must stay on the same origin');
+  }
+  const response = await fetch(resolvedUrl.toString(), { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`WAV fetch failed with status ${response.status}`);
+  }
+  return response.arrayBuffer();
+}
+
+/**
+ * Load the four stem WAVs from artifact.stems (paths as emitted by the live runtime).
+ * Dual compare callers pass **`artifact2`** so shared lanes visualize the accelerated GPU run;
+ * summaries + Input auto-load (`finishPreloadExtras`) still key off **`compareState.artifact`** (primary CPU).
+ */
+async function autoLoadStemWaveformsFromArtifact(artifact) {
+  if (!artifact || !artifact.stems) {
+    return { ok: false, message: 'no stem metadata' };
+  }
+  for (const key of ['vocals', 'drums', 'bass', 'other']) {
+    const urlPath = stemPathToRepoUrlPath(artifact.stems[key]);
+    const buf = await fetchWavArrayBuffer(urlPath);
+    const samples = decodePcmWav(buf);
+    drawWaveform(elements.waveformCanvases[key], samples);
+    drawSpectrogram(elements.spectrogramCanvases[key], samples);
+    registerLaneUrl(key, playbackUrlFromRepoPath(artifact.stems[key]));
+  }
+  const secondaryStemLabel = compareState.artifact2
+    ? deviceLabelForArtifact(compareState.artifact2, 'GPU')
+    : null;
+  const laneLabel = secondaryStemLabel ? `4 stems (${secondaryStemLabel} auto)` : '4 stems (auto)';
+  setText(elements.audioFileCount, laneLabel);
+  return { ok: true, message: '' };
+}
+
+function toggleLanePlayback(lane) {
+  const url = compareState.laneUrls[lane];
+  if (!url) {
+    setBanner(`No ${lane} audio loaded for playback.`, { type: 'error' });
     return;
   }
-  if (audio.paused) {
-    audio.play();
-    setText(elements.playbackState, 'playing');
-    setText(elements.playbackToggle, 'Pause');
-    elements.playbackToggle.setAttribute('aria-pressed', 'true');
-  } else {
+  const audio = compareState.audioElement;
+  if (compareState.activeLaneKey === lane && audio && !audio.paused) {
     audio.pause();
-    setText(elements.playbackState, 'paused');
-    setText(elements.playbackToggle, 'Play');
-    elements.playbackToggle.setAttribute('aria-pressed', 'false');
+    updatePausedLaneUi(lane);
+    return;
   }
+  if (compareState.activeLaneKey === lane && audio && audio.paused) {
+    audio
+      .play()
+      .then(() => updatePlayingLaneUi(lane))
+      .catch((err) => {
+        setBanner(`Playback failed: ${err.message}`, { type: 'error' });
+      });
+    return;
+  }
+  if (audio) {
+    audio.pause();
+  }
+  compareState.audioElement = new Audio(url);
+  compareState.activeLaneKey = lane;
+  attachPlaybackEndedHandler(compareState.audioElement);
+  compareState.audioElement
+    .play()
+    .then(() => updatePlayingLaneUi(lane))
+    .catch((err) => {
+      setBanner(`Playback failed: ${err.message}`, { type: 'error' });
+      compareState.audioElement = null;
+      compareState.activeLaneKey = null;
+      setPlaybackUiStopped();
+    });
+}
+
+function togglePlayback() {
+  toggleLanePlayback('input');
 }
 
 function normalizeStageTimings(stageTimingsSource, stages) {
@@ -814,6 +1245,22 @@ function normalizeArtifact(payload, loadedPath) {
   }
 
   const stageTimings = normalizeStageTimings(metadata.stage_timings ?? root.stage_timings ?? null, stages);
+  const rootStft = expectNumber(root.stft_ms, 'stft_ms');
+  const rootInfer = expectNumber(root.infer_ms, 'infer_ms');
+  const rootIstft = expectNumber(root.istft_ms, 'istft_ms');
+  const filledStageTimings = {};
+  for (const s of stages) {
+    const v = stageTimings[s];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      filledStageTimings[s] = v;
+    } else if (s === 'stft') {
+      filledStageTimings[s] = rootStft;
+    } else if (s === 'infer') {
+      filledStageTimings[s] = rootInfer;
+    } else if (s === 'istft') {
+      filledStageTimings[s] = rootIstft;
+    }
+  }
   const sourceKind = expectString(source.kind, 'source.kind');
   const sourceReference = expectString(source.reference, 'source.reference');
   const input = expectString(root.input, 'input');
@@ -868,12 +1315,12 @@ function normalizeArtifact(payload, loadedPath) {
       channels: expectInteger(metadata.channels, 'metadata.channels', { min: 0 }),
       sampleWidth: expectInteger(metadata.sample_width_bytes, 'metadata.sample_width_bytes', { min: 0 }),
       stages,
-      stageTimings,
+      stageTimings: filledStageTimings,
       errorStage: root.error_stage === null || root.error_stage === undefined ? null : expectString(root.error_stage, 'error_stage'),
       errorMessage: root.error_message === null || root.error_message === undefined ? null : expectString(root.error_message, 'error_message'),
     },
     compare: {
-      stageDetails: buildStageDetails(stages, stageTimings),
+      stageDetails: buildStageDetails(stages, filledStageTimings),
       sourceSummary: deriveSourceLabel(sourceKind, sourceMetadata),
     },
   };
@@ -1128,6 +1575,16 @@ async function loadArtifactFromFile() {
   try {
     const raw = await file.text();
     renderArtifact(normalizeArtifact(JSON.parse(raw), file.name));
+    setBanner(`Loaded file: ${file.name}`, { type: 'status' });
+    try {
+      await autoLoadStemWaveformsFromArtifact(compareState.artifact);
+    } catch (stemError) {
+      const stemMessage = stemError instanceof Error ? stemError.message : String(stemError);
+      setBanner(
+        `Loaded file: ${file.name}. Stem auto-load failed: ${stemMessage} (use manual WAV loader).`,
+        { type: 'status' },
+      );
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!compareState.artifact) {
@@ -1167,6 +1624,16 @@ async function loadArtifactFromUrl(artifactPath) {
     }
 
     renderArtifact(normalizeArtifact(await response.json(), loadedPath));
+    setBanner(`Loaded artifact from URL (${loadedPath}).`, { type: 'status' });
+    try {
+      await autoLoadStemWaveformsFromArtifact(compareState.artifact);
+    } catch (stemError) {
+      const stemMessage = stemError instanceof Error ? stemError.message : String(stemError);
+      setBanner(
+        `Loaded artifact from URL (${loadedPath}). Stem auto-load failed: ${stemMessage} (use manual WAV loader).`,
+        { type: 'status' },
+      );
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!compareState.artifact) {
@@ -1217,8 +1684,18 @@ async function loadComparisonFromUrls(artifactPath, artifactPath2) {
     compareState.artifactToken2 = `${secondaryArtifact.loadedPath} :: ${secondaryArtifact.timestamp ?? '—'}`;
     updateArtifactSummaryPanels(primaryArtifact);
     renderCompareCanvas(primaryArtifact);
+    let stemNote = '';
+    try {
+      await autoLoadStemWaveformsFromArtifact(secondaryArtifact);
+      stemNote =
+        ` Waveform stems: secondary (${secondaryLabel}) run.` +
+        ` Input / Play: primary (${primaryLabel}) mix.wav → original input heuristic (finishPreloadExtras).`;
+    } catch (stemError) {
+      const stemMessage = stemError instanceof Error ? stemError.message : String(stemError);
+      stemNote = ` Stem auto-load failed: ${stemMessage} (use manual WAV loader).`;
+    }
     setBanner(
-      `Loaded comparison artifacts: ${primaryArtifact.loadedPath} (${primaryLabel}) and ${secondaryArtifact.loadedPath} (${secondaryLabel}).`,
+      `Loaded comparison artifacts: ${primaryArtifact.loadedPath} (${primaryLabel}) and ${secondaryArtifact.loadedPath} (${secondaryLabel}).${stemNote}`,
       { type: 'status' },
     );
     setText(elements.compareMode, `${compareState.activeMode} + compare`);
@@ -1245,33 +1722,146 @@ function handleFileSelection() {
   elements.selectedFile.textContent = file ? `Selected file: ${file.name}` : 'No file selected';
 }
 
+function syncBenchmarkChosenLabel() {
+  const file = elements.benchmarkFileInput.files?.[0];
+  setText(
+    elements.benchmarkSelectedLine,
+    file ? `Selected benchmark: ${file.name}` : 'No benchmark JSON selected',
+  );
+}
+
+async function refreshManualArtifactsFolderStatus() {
+  const el = document.getElementById('manual-fs-folder-status');
+  if (!el) {
+    return;
+  }
+  if (!isArtifactsScopePickerSupported()) {
+    el.textContent = 'Use Chrome / Edge · structured pick targets artifacts/live and artifacts/bench.';
+    return;
+  }
+  const root = await loadPersistedArtifactsRoot();
+  if (!root) {
+    el.textContent = '(No folder saved)';
+    return;
+  }
+  const readable = await requestDirectoryReadAccess(root);
+  if (!readable) {
+    el.textContent = 'Saved folder permission expired.';
+    await clearPersistedArtifactsRoot();
+    return;
+  }
+  el.textContent = `Saved: "${root.name}"`;
+}
+
+function setupManualFilesystemScopes() {
+  const inner = document.querySelector('.manual-loaders-inner');
+  const rememberBtn = document.getElementById('manual-fs-remember-folder');
+  const forgetBtn = document.getElementById('manual-fs-forget-folder');
+
+  rememberBtn?.addEventListener('click', async () => {
+    try {
+      const handle = await persistArtifactsFolderFromUser();
+      setBanner(
+        `Remembered “${handle.name}”. “Choose file” uses structured pickers toward artifacts/live and artifacts/bench when present.`,
+        { type: 'status' },
+      );
+      await refreshManualArtifactsFolderStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBanner(`Could not remember folder: ${message}`, { type: 'error' });
+    }
+  });
+
+  forgetBtn?.addEventListener('click', async () => {
+    await clearPersistedArtifactsRoot();
+    setBanner('Cleared remembered artifacts folder.', { type: 'status' });
+    await refreshManualArtifactsFolderStatus();
+  });
+
+  void refreshManualArtifactsFolderStatus();
+
+  if (!inner || !isArtifactsScopePickerSupported()) {
+    return;
+  }
+
+  inner.addEventListener('click', async (ev) => {
+    const label = ev.target.closest('[data-fs-kind]');
+    if (!label) {
+      return;
+    }
+    const rawKind = label.getAttribute('data-fs-kind');
+    const allowedKinds = new Set(['artifact', 'benchmark', 'wav-input', 'wav-stems']);
+    if (!rawKind || !allowedKinds.has(rawKind)) {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    try {
+      await runScopedKindPicker(/** @type {'artifact' | 'benchmark' | 'wav-input' | 'wav-stems'} */ (rawKind), {
+        artifact: elements.fileInput,
+        benchmark: elements.benchmarkFileInput,
+        wavInput: elements.inputAudioFile,
+        wavStems: elements.stemAudioFiles,
+      });
+      if (rawKind === 'benchmark') {
+        syncBenchmarkChosenLabel();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBanner(`Structured file picker failed: ${message}`, { type: 'error' });
+    }
+  }, true);
+}
+
 function initialize() {
   compareState.activeMode = 'side-by-side';
   setEmptyState();
   setEmptyBenchmarkState();
+  compareState.benchmarkLoaded = false;
   elements.fileInput.addEventListener('change', handleFileSelection);
+  elements.benchmarkFileInput.addEventListener('change', syncBenchmarkChosenLabel);
   elements.loadButton.addEventListener('click', loadArtifactFromFile);
   elements.loadBenchmarkButton.addEventListener('click', loadBenchmarkFromFile);
   elements.loadAudioButton.addEventListener('click', loadAudioWaveforms);
   elements.playbackToggle.addEventListener('click', togglePlayback);
+  LANE_PLAY_KEYS.forEach((lane) => {
+    lanePlayButton(lane)?.addEventListener('click', () => toggleLanePlayback(lane));
+  });
   elements.compareModeButtons.forEach((button) => {
     button.addEventListener('click', () => setCompareMode(button.dataset.mode));
   });
-  setBanner('Awaiting a loaded artifact.', { type: 'status' });
+  setupUploadControls();
+  setupManualFilesystemScopes();
+  void initFromLocation();
+}
 
-  const preloadArtifact = new URLSearchParams(window.location.search).get('artifact');
-  const preloadArtifact2 = new URLSearchParams(window.location.search).get('artifact2');
+async function initFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const preloadArtifact = params.get('artifact');
+  const preloadArtifact2 = params.get('artifact2');
+  const benchmarkQuery = params.get('benchmark');
+
   if (preloadArtifact2 && !preloadArtifact) {
+    setAudienceMode(false);
     setBanner('artifact2 requires an artifact query parameter.', { type: 'error' });
     return;
   }
-  if (preloadArtifact && preloadArtifact2) {
-    void loadComparisonFromUrls(preloadArtifact, preloadArtifact2);
+
+  if (preloadArtifact) {
+    setAudienceMode(true);
+    if (preloadArtifact2) {
+      await loadComparisonFromUrls(preloadArtifact, preloadArtifact2);
+    } else {
+      await loadArtifactFromUrl(preloadArtifact);
+    }
+    if (compareState.artifact) {
+      await finishPreloadExtras(benchmarkQuery || '');
+    }
     return;
   }
-  if (preloadArtifact) {
-    void loadArtifactFromUrl(preloadArtifact);
-  }
+
+  setAudienceMode(false);
+  setBanner('Awaiting a loaded artifact.', { type: 'status' });
 }
 
 initialize();

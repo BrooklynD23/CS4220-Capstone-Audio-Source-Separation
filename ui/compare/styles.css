@@ -44,6 +44,80 @@ body {
   padding: 34px 20px 52px;
 }
 
+body[data-mode="preloaded"] #upload-card {
+  display: none;
+}
+
+.manual-loaders {
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.manual-loaders-summary {
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+
+.manual-loaders-summary::-webkit-details-marker {
+  display: none;
+}
+
+.manual-loaders-inner {
+  padding: 0 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.manual-fs-scope-hint {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  line-height: 1.55;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--card-border);
+}
+
+.manual-fs-mini-button {
+  font: inherit;
+  font-size: 0.85rem;
+  margin: 0 0.35rem;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border-strong);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.manual-fs-mini-button:hover {
+  border-color: var(--accent-strong);
+}
+
+#manual-fs-folder-status {
+  display: inline-block;
+  margin-left: 0.45rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.device-select {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--card-border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+}
+
 code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 0.95em;
@@ -478,21 +552,41 @@ p {
 
 .waveform-lane {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
   padding: 10px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 14px;
   background: rgba(6, 13, 24, 0.62);
 }
 
-.waveform-lane span {
+.waveform-lane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.waveform-lane-header span {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.lane-play-btn {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.lane-play-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .waveform-lane canvas {

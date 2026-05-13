@@ -139,6 +139,8 @@ def build_live_runtime_result(
     mode: str = "smoke",
     model_path: str = DEFAULT_MODEL_PATH,
     stem_routing: StemRouting | None = None,
+    infer_ms_override: float | None = None,
+    stage_timings_override: StageTimings | None = None,
 ) -> LiveRuntimeResult
 ```
 
@@ -158,6 +160,8 @@ Compose the complete `LiveRuntimeResult` artifact from a pre-decoded source enve
 | `mode` | `str` | `"smoke"` | Run mode: `"smoke"` or `"full"` |
 | `model_path` | `str` | `DEFAULT_MODEL_PATH` | Requested model path (subject to fallback resolution) |
 | `stem_routing` | `StemRouting \| None` | `None` | Explicit stem output paths; defaults to smoke paths if `None` |
+| `infer_ms_override` | `float \| None` | `None` | When `stage_timings_override` is omitted, supplies `infer_ms` for smoke-style artifacts |
+| `stage_timings_override` | `StageTimings \| None` | `None` | Full measured `stft_ms` / `infer_ms` / `istft_ms` / `total_ms` (e.g. Open-Unmix full runs) |
 
 #### Returns
 
@@ -180,12 +184,16 @@ The returned `HealthTelemetry` is set according to these rules (in priority orde
 
 #### Stage Timing Assignment
 
+If `stage_timings_override` is set, those values are written to the artifact unchanged.
+
+Otherwise (smoke-style):
+
 | `StageTimings` field | Source |
 |----------------------|--------|
 | `stft_ms` | `source_ingest.ingest_ms` (wall-clock time of the ingest call) |
-| `infer_ms` | Wall-clock time of the chunk telemetry read |
+| `infer_ms` | `infer_ms_override` if provided, else a small chunk telemetry stub |
 | `istft_ms` | Wall-clock time of the metadata assembly |
-| `total_ms` | Sum of all three |
+| `total_ms` | Sum of the three fields above |
 
 #### Example
 

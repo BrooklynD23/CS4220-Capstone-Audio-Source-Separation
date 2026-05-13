@@ -241,6 +241,18 @@ def test_write_live_stems_reuses_the_decoded_source_envelope(tmp_path: Path) -> 
     assert sorted(path.name for path in output_dir.glob("*.wav")) == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
 
 
+def test_write_live_mix_wav_writes_readable_wav_chunk(tmp_path: Path) -> None:
+    """mix.wav complements stem outputs so the compare shell can PCM-decode Input."""
+
+    output_dir = tmp_path / "mix-out"
+    pcm = bytes(256)  # 128 mono s16 silent samples
+    from live_runtime.stem_router import write_live_mix_wav
+
+    wrote = write_live_mix_wav(output_dir, sample_rate_hz=44100, pcm=pcm)
+    assert wrote == output_dir / "mix.wav"
+    assert wrote.is_file()
+
+
 def test_write_live_stems_logs_each_stem_write(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

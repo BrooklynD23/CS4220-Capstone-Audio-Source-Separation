@@ -1,0 +1,18 @@
+{
+  "phases": [
+    {
+      "name": "throughput_cpu",
+      "summary": {
+        "execution_kind": "cpu",
+        "wall_clock_ms_per_chunk": 100.0
+      }
+    },
+    {
+      "name": "throughput_gpu",
+      "summary": {
+        "execution_kind": "gpu",
+        "wall_clock_ms_per_chunk": 25.0
+      }
+    }
+  ]
+}

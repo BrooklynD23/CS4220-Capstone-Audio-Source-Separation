@@ -162,3 +162,17 @@ routing = write_live_stems(ingest, "artifacts/live/run-001/")
 
 result = build_live_runtime_result(ingest, chunk_duration_s=1.0, stem_routing=routing)
 ```
+
+### `write_live_mix_wav`
+
+```python
+def write_live_mix_wav(
+    output_dir: Path | str,
+    *,
+    sample_rate_hz: int,
+    pcm: bytes,
+    mix_name: str = DEFAULT_MIX_NAME,
+) -> Path
+```
+
+Writes a mono 16-bit PCM `mix.wav` (by default) with the **decoded source** `pcm` at `sample_rate_hz`. The live separation CLI invokes this on success so the compare UI can PCM-decode / play the Input lane when the JSON `input` field still references a non-WAV media path.

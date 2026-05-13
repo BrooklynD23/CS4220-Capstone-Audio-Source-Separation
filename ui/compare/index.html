@@ -10,130 +10,231 @@
   <body>
     <main class="app-shell">
       <header class="hero">
-        <a href="/ui/demo/" style="display:inline-block;margin-bottom:0.75rem;color:#8ee3ff;font-size:0.875rem;text-decoration:none;">→ Live Demo</a>
+        <a href="/ui/demo/" style="display:inline-block;margin-bottom:0.75rem;color:#8ee3ff;font-size:0.875rem;text-decoration:none;">→ Legacy demo URL (redirects here)</a>
         <p class="eyebrow">Live runtime compare shell</p>
         <h1>Persisted artifact compare</h1>
         <p class="lede">
-          Load a single <code>live_runtime_result.json</code> artifact from disk and inspect source,
-          health, timing, stems, and provenance without reconstructing state from logs.
+          Inspect a <code>live_runtime_result.json</code> artifact with optional launcher preload
+          (<code>?artifact=</code>), or run separation from the browser. Advanced manual JSON/WAV loaders
+          stay under “Manual loaders”.
         </p>
       </header>
 
-      <section class="controls card" aria-labelledby="controls-heading">
+      <section id="upload-card" class="controls card" aria-labelledby="upload-heading" data-testid="upload-card">
         <div class="section-heading">
-          <h2 id="controls-heading">Artifact loader</h2>
-          <p>Choose a JSON artifact and load it into the compare shell.</p>
+          <h2 id="upload-heading">Run separation</h2>
+          <p>Upload audio; the server runs the live pipeline and opens this page with the new artifact.</p>
         </div>
-
         <div class="control-row">
-          <label class="file-picker" for="artifact-file">
-            <span class="file-picker-label">Artifact file</span>
-            <input id="artifact-file" name="artifact-file" type="file" accept="application/json,.json" />
+          <label class="file-picker" for="upload-file">
+            <span class="file-picker-label">Audio file</span>
+            <input id="upload-file" name="upload-file" type="file"
+              accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac,.mp3,.wav,.m4a,.ogg,.flac" />
           </label>
-
-          <button id="load-button" type="button" class="primary-button">Load artifact</button>
+          <select id="upload-device" class="device-select" aria-label="Processing device" data-testid="upload-device">
+            <option value="gpu">GPU</option>
+            <option value="cpu">CPU</option>
+          </select>
+          <button id="upload-separate-btn" type="button" class="primary-button" disabled data-testid="upload-separate-btn">Separate</button>
         </div>
-
-        <p id="file-hint" class="hint">Expected shape: persisted live runtime JSON from the separation run.</p>
-        <p id="selected-file" class="selected-file" data-testid="selected-file">No file selected</p>
+        <p id="upload-status-line" class="hint" data-testid="upload-status-line">Awaiting file…</p>
       </section>
 
-      <section class="artifact-grid" aria-label="Evidence and waveform loaders">
-        <section class="controls card" aria-labelledby="benchmark-heading">
-          <div class="section-heading">
-            <h2 id="benchmark-heading">Benchmark evidence</h2>
-            <p>Load a benchmark result or final evidence manifest.</p>
-          </div>
+      <details id="manual-loaders" class="manual-loaders card" data-testid="manual-loaders">
+        <summary class="manual-loaders-summary">Manual loaders — JSON artifacts and WAV files</summary>
+        <div class="manual-loaders-inner">
+          <p id="manual-fs-scope-hint" class="manual-fs-scope-hint hint">
+            Browsers cannot open arbitrary disk paths automatically. Using Chrome / Edge over
+            <code>https:</code> or <code>http://localhost</code>, choose your repo&apos;s folder that contains
+            <code>artifacts/</code> (often the checkout root):
+            <button id="manual-fs-remember-folder" type="button" class="manual-fs-mini-button">
+              Remember artifacts folder…</button><button id="manual-fs-forget-folder" type="button" class="manual-fs-mini-button">Clear saved folder</button>
+            <span id="manual-fs-folder-status" data-testid="manual-fs-folder-status"></span>
+            After that, <strong>Choose file</strong> here opens under <code>artifacts/live/…</code> or
+            <code>artifacts/bench/…</code> when those directories exist beneath the saved folder. Other browsers use the usual OS picker.
+          </p>
+          <section class="controls card" aria-labelledby="controls-heading">
+            <div class="section-heading">
+              <h2 id="controls-heading">Artifact loader</h2>
+              <p>Choose a JSON artifact and load it into the compare shell.</p>
+            </div>
 
-          <div class="control-row">
-            <label class="file-picker" for="benchmark-file">
-              <span class="file-picker-label">Evidence JSON</span>
-              <input id="benchmark-file" name="benchmark-file" type="file" accept="application/json,.json" />
-            </label>
-            <button id="load-benchmark-button" type="button" class="primary-button">Load benchmark</button>
-          </div>
+            <div class="control-row">
+              <label class="file-picker" for="artifact-file" data-fs-kind="artifact">
+                <span class="file-picker-label">Artifact file</span>
+                <input id="artifact-file" name="artifact-file" type="file" accept="application/json,.json" />
+              </label>
 
-          <dl class="compare-metrics benchmark-metrics">
-            <div>
-              <dt>CPU kind</dt>
-              <dd id="benchmark-kind-cpu" data-testid="benchmark-kind-cpu">—</dd>
+              <button id="load-button" type="button" class="primary-button">Load artifact</button>
             </div>
-            <div>
-              <dt>Accelerated kind</dt>
-              <dd id="benchmark-kind-gpu" data-testid="benchmark-kind-gpu">—</dd>
-            </div>
-            <div>
-              <dt>CPU chunk</dt>
-              <dd id="benchmark-cpu-ms" data-testid="benchmark-cpu-ms">—</dd>
-            </div>
-            <div>
-              <dt>Accelerated chunk</dt>
-              <dd id="benchmark-gpu-ms" data-testid="benchmark-gpu-ms">—</dd>
-            </div>
-            <div>
-              <dt>Measured delta</dt>
-              <dd id="benchmark-delta" data-testid="benchmark-delta">—</dd>
-            </div>
-          </dl>
-        </section>
 
-        <section class="controls card" aria-labelledby="audio-heading">
-          <div class="section-heading">
-            <h2 id="audio-heading">Waveform assets</h2>
-            <p>Load the source WAV and the four generated WAV stems.</p>
-          </div>
+            <p id="file-hint" class="hint">Expected shape: persisted live runtime JSON from the separation run.</p>
+            <p id="selected-file" class="selected-file" data-testid="selected-file">No file selected</p>
+          </section>
 
-          <div class="control-row">
-            <label class="file-picker" for="input-audio-file">
-              <span class="file-picker-label">Input WAV</span>
-              <input id="input-audio-file" name="input-audio-file" type="file" accept="audio/wav,.wav" />
-            </label>
-            <label class="file-picker" for="stem-audio-files">
-              <span class="file-picker-label">Stem WAV files</span>
-              <input id="stem-audio-files" name="stem-audio-files" type="file" accept="audio/wav,.wav" multiple />
-            </label>
-            <button id="load-audio-button" type="button" class="primary-button">Load WAVs</button>
-          </div>
-          <p id="audio-file-count" class="selected-file" data-testid="audio-file-count">No audio files loaded</p>
-        </section>
-      </section>
+          <section class="artifact-grid" aria-label="Evidence and waveform loaders">
+            <section class="controls card" aria-labelledby="benchmark-heading">
+              <div class="section-heading">
+                <h2 id="benchmark-heading">Benchmark evidence</h2>
+                <p>Load a benchmark result or final evidence manifest.</p>
+              </div>
+
+              <div class="control-row">
+                <label class="file-picker" for="benchmark-file" data-fs-kind="benchmark">
+                  <span class="file-picker-label">Evidence JSON</span>
+                  <input id="benchmark-file" name="benchmark-file" type="file" accept="application/json,.json" />
+                </label>
+                <button id="load-benchmark-button" type="button" class="primary-button">Load benchmark</button>
+              </div>
+
+              <dl class="compare-metrics benchmark-metrics">
+                <div>
+                  <dt>CPU kind</dt>
+                  <dd id="benchmark-kind-cpu" data-testid="benchmark-kind-cpu">—</dd>
+                </div>
+                <div>
+                  <dt>Accelerated kind</dt>
+                  <dd id="benchmark-kind-gpu" data-testid="benchmark-kind-gpu">—</dd>
+                </div>
+                <div>
+                  <dt>CPU chunk</dt>
+                  <dd id="benchmark-cpu-ms" data-testid="benchmark-cpu-ms">—</dd>
+                </div>
+                <div>
+                  <dt>Accelerated chunk</dt>
+                  <dd id="benchmark-gpu-ms" data-testid="benchmark-gpu-ms">—</dd>
+                </div>
+                <div>
+                  <dt>Measured delta</dt>
+                  <dd id="benchmark-delta" data-testid="benchmark-delta">—</dd>
+                </div>
+              </dl>
+              <p id="benchmark-selected-line" class="hint" data-testid="benchmark-selected-line">No benchmark JSON selected</p>
+            </section>
+
+            <section class="controls card" aria-labelledby="audio-heading">
+              <div class="section-heading">
+                <h2 id="audio-heading">Waveform assets</h2>
+                <p>Load the source WAV and the four generated WAV stems.</p>
+              </div>
+
+              <div class="control-row">
+                <label class="file-picker" for="input-audio-file" data-fs-kind="wav-input">
+                  <span class="file-picker-label">Input WAV</span>
+                  <input id="input-audio-file" name="input-audio-file" type="file" accept="audio/wav,.wav" />
+                </label>
+                <label class="file-picker" for="stem-audio-files" data-fs-kind="wav-stems">
+                  <span class="file-picker-label">Stem WAV files</span>
+                  <input id="stem-audio-files" name="stem-audio-files" type="file" accept="audio/wav,.wav" multiple />
+                </label>
+                <button id="load-audio-button" type="button" class="primary-button">Load WAVs</button>
+              </div>
+              <p id="audio-file-count" class="selected-file" data-testid="audio-file-count">No audio files loaded</p>
+            </section>
+          </section>
+        </div>
+      </details>
 
       <section class="card waveform-panel" aria-labelledby="waveform-heading">
         <div class="section-heading">
           <h2 id="waveform-heading">Waveform lanes</h2>
-          <p>Browser-rendered lanes for the loaded source and canonical stems.</p>
+          <p>
+            Vertical stack: <strong>Input</strong> (decoded <code>mix.wav</code> beside stems, or WAV <code>input</code>),
+            then the four separated stems—each lane shows waveform + spectrogram canvases (see
+            <code>docs/ui/README.md</code> §2.2 dual-run policy).
+          </p>
         </div>
         <div class="waveform-grid">
           <article class="waveform-lane">
-            <span>Input</span>
+            <div class="waveform-lane-header">
+              <span>Input</span>
+              <button
+                type="button"
+                class="mode-button lane-play-btn"
+                data-lane="input"
+                data-testid="lane-play-input"
+                aria-pressed="false"
+                disabled
+              >
+                Play
+              </button>
+            </div>
             <div class="lane-canvases">
               <canvas id="waveform-input" data-testid="waveform-canvas-input" width="640" height="96"></canvas>
               <canvas id="spectrogram-input" class="spectrogram-canvas" width="640" height="80"></canvas>
             </div>
           </article>
           <article class="waveform-lane">
-            <span>Vocals</span>
+            <div class="waveform-lane-header">
+              <span>Vocals</span>
+              <button
+                type="button"
+                class="mode-button lane-play-btn"
+                data-lane="vocals"
+                data-testid="lane-play-vocals"
+                aria-pressed="false"
+                disabled
+              >
+                Play
+              </button>
+            </div>
             <div class="lane-canvases">
               <canvas id="waveform-vocals" data-testid="waveform-canvas-vocals" width="640" height="96"></canvas>
               <canvas id="spectrogram-vocals" class="spectrogram-canvas" width="640" height="80"></canvas>
             </div>
           </article>
           <article class="waveform-lane">
-            <span>Drums</span>
+            <div class="waveform-lane-header">
+              <span>Drums</span>
+              <button
+                type="button"
+                class="mode-button lane-play-btn"
+                data-lane="drums"
+                data-testid="lane-play-drums"
+                aria-pressed="false"
+                disabled
+              >
+                Play
+              </button>
+            </div>
             <div class="lane-canvases">
               <canvas id="waveform-drums" data-testid="waveform-canvas-drums" width="640" height="96"></canvas>
               <canvas id="spectrogram-drums" class="spectrogram-canvas" width="640" height="80"></canvas>
             </div>
           </article>
           <article class="waveform-lane">
-            <span>Bass</span>
+            <div class="waveform-lane-header">
+              <span>Bass</span>
+              <button
+                type="button"
+                class="mode-button lane-play-btn"
+                data-lane="bass"
+                data-testid="lane-play-bass"
+                aria-pressed="false"
+                disabled
+              >
+                Play
+              </button>
+            </div>
             <div class="lane-canvases">
               <canvas id="waveform-bass" data-testid="waveform-canvas-bass" width="640" height="96"></canvas>
               <canvas id="spectrogram-bass" class="spectrogram-canvas" width="640" height="80"></canvas>
             </div>
           </article>
           <article class="waveform-lane">
-            <span>Other</span>
+            <div class="waveform-lane-header">
+              <span>Other</span>
+              <button
+                type="button"
+                class="mode-button lane-play-btn"
+                data-lane="other"
+                data-testid="lane-play-other"
+                aria-pressed="false"
+                disabled
+              >
+                Play
+              </button>
+            </div>
             <div class="lane-canvases">
               <canvas id="waveform-other" data-testid="waveform-canvas-other" width="640" height="96"></canvas>
               <canvas id="spectrogram-other" class="spectrogram-canvas" width="640" height="80"></canvas>
@@ -141,7 +242,9 @@
           </article>
         </div>
         <div class="playback-controls">
-          <button id="playback-toggle" type="button" class="mode-button" data-testid="playback-toggle" aria-pressed="false">Play</button>
+          <button id="playback-toggle" type="button" class="mode-button" data-testid="playback-toggle" aria-pressed="false">
+            Play input
+          </button>
           <span id="playback-state" data-testid="playback-state">stopped</span>
         </div>
       </section>

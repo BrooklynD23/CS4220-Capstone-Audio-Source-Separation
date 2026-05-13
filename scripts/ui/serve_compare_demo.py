@@ -4,11 +4,9 @@ import argparse
 import io
 import json
 import re
+import subprocess
 import sys
-import tempfile
 import uuid
-import wave
-from datetime import UTC, datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,8 +23,6 @@ DEFAULT_DIRECTORY = PROJECT_ROOT
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8000
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-
-_SEPARATOR_CACHE: dict[str, Any] = {}
 
 
 def _parse_multipart(
@@ -95,98 +91,111 @@ def _encode_compare_artifact(artifact: str | None) -> str | None:
     return encode_artifact_path(str(PROJECT_ROOT), artifact)
 
 
-def _build_compare_url(host: str, port: int, artifact: str | None, artifact2: str | None) -> str:
+def _build_compare_url(
+    host: str,
+    port: int,
+    artifact: str | None,
+    artifact2: str | None,
+    benchmark: str | None = None,
+) -> str:
     query_parts = []
     if artifact is not None:
         query_parts.append(f"artifact={artifact}")
     if artifact2 is not None:
         query_parts.append(f"artifact2={artifact2}")
+    if benchmark is not None:
+        query_parts.append(f"benchmark={benchmark}")
     query = "&".join(query_parts)
     return urlunsplit(("http", f"{host}:{port}", "/ui/compare/", query, ""))
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        delete=False,
-        dir=str(path.parent),
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    ) as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-        tmp_path = Path(handle.name)
-    tmp_path.replace(path)
-
-
-def _run_separation(mp3_bytes: bytes, device_str: str, project_root: Path) -> dict[str, Any]:
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
-    from live_runtime import umx_separator
-    from live_runtime.mp3_ingest import decode_audio_to_pcm
-    from live_runtime.stem_router import write_live_stems_from_arrays
-
-    device = umx_separator.resolve_device(device_str)
-
-    if device not in _SEPARATOR_CACHE:
-        _SEPARATOR_CACHE[device] = umx_separator.load_umxhq_separator(device)
-    separator = _SEPARATOR_CACHE[device]
-
+def _run_separation(
+    media_bytes: bytes,
+    device_str: str,
+    project_root: Path,
+    original_filename: str,
+) -> dict[str, Any]:
+    """Run `scripts/live/run_live_separation.py` so the written JSON matches live-runtime schema."""
+    root = project_root.resolve()
     run_id = uuid.uuid4().hex[:8]
-    output_dir = project_root / "artifacts" / "live" / f"demo-{run_id}"
+    output_dir = (root / "artifacts" / "live" / f"demo-{run_id}").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    mp3_path = output_dir / "input.mp3"
-    mp3_path.write_bytes(mp3_bytes)
+    safe_name = Path(original_filename or "upload").name
+    suffix = Path(safe_name).suffix.lower()
+    allowed = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac", ".mp4", ".webm", ".mov"}
+    if suffix not in allowed:
+        suffix = ".mp3"
+    input_media = (output_dir / f"input{suffix}").resolve()
+    input_media.write_bytes(media_bytes)
 
-    decoded = decode_audio_to_pcm(mp3_path, target_sample_rate_hz=44100, chunk_duration_s=0.5)
+    dev = (device_str or "cpu").strip().lower()
+    device_flag = "gpu" if dev in ("cuda", "gpu") else "cpu"
 
-    audio_tensor = umx_separator.pcm_to_tensor(decoded.pcm)
-    sep = umx_separator.separate_tensor(audio_tensor, decoded.sample_rate_hz, separator, device)
-
-    mix_path = output_dir / "mix.wav"
-    with wave.open(str(mix_path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(decoded.sample_rate_hz)
-        wf.writeframes(decoded.pcm)
-
-    routing = write_live_stems_from_arrays(sep.stems, output_dir, sep.sample_rate_hz)
-
-    device_used = "gpu" if device == "cuda" else device
     artifact_path = output_dir / "live_runtime_result.json"
-    _write_json_atomic(artifact_path, {
-        "status": "ok",
-        "input": str(mp3_path),
-        "timestamp": datetime.now(UTC).isoformat(),
-        "stft_ms": sep.timings.stft_ms,
-        "infer_ms": sep.timings.infer_ms,
-        "istft_ms": sep.timings.istft_ms,
-        "total_ms": sep.timings.total_ms,
-        "device_used": device_used,
-        "sample_rate_hz": sep.sample_rate_hz,
-    })
+    cli = [
+        sys.executable,
+        str(root / "scripts" / "live" / "run_live_separation.py"),
+        "--source-mode",
+        "mp3",
+        "--input",
+        str(input_media),
+        "--output-dir",
+        str(output_dir),
+        "--artifact-path",
+        str(artifact_path),
+        "--mode",
+        "smoke",
+        "--device-requested",
+        device_flag,
+        "--device-used",
+        device_flag,
+        "--mic-backend",
+        "fake",
+    ]
+    proc = subprocess.run(
+        cli,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=900,
+    )
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip() or f"separation exited with {proc.returncode}"
+        raise RuntimeError(msg)
+
+    if not artifact_path.is_file():
+        raise RuntimeError("live_runtime_result.json was not written")
+
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    stem_paths = payload.get("stem_paths") if isinstance(payload.get("stem_paths"), dict) else {}
+    meta = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    device_used = str(meta.get("device_used") or device_flag)
 
     def rel(p: Path) -> str:
-        return str(p.relative_to(project_root)).replace("\\", "/")
+        return str(p.resolve().relative_to(root)).replace("\\", "/")
+
+    def stem_key(key: str) -> str:
+        raw = stem_paths.get(key) if isinstance(stem_paths, dict) else None
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip().replace("\\", "/")
+        return rel(output_dir / f"{key}.wav")
 
     return {
         "artifact_path": rel(artifact_path),
         "stem_urls": {
-            "input":  rel(mix_path),
-            "vocals": rel(Path(routing.vocals_path)),
-            "drums":  rel(Path(routing.drums_path)),
-            "bass":   rel(Path(routing.bass_path)),
-            "other":  rel(Path(routing.other_path)),
+            "input": rel(input_media),
+            "vocals": stem_key("vocals"),
+            "drums": stem_key("drums"),
+            "bass": stem_key("bass"),
+            "other": stem_key("other"),
         },
         "timings": {
-            "stft_ms":  sep.timings.stft_ms,
-            "infer_ms": sep.timings.infer_ms,
-            "istft_ms": sep.timings.istft_ms,
-            "total_ms": sep.timings.total_ms,
+            "stft_ms": float(payload.get("stft_ms") or 0.0),
+            "infer_ms": float(payload.get("infer_ms") or 0.0),
+            "istft_ms": float(payload.get("istft_ms") or 0.0),
+            "total_ms": float(payload.get("total_ms") or 0.0),
         },
         "device_used": device_used,
     }
@@ -233,7 +242,12 @@ class CompareDemoHandler(SimpleHTTPRequestHandler):
         mp3_bytes = file_item.file.read()
 
         try:
-            result = _run_separation(mp3_bytes, device_str, Path(self.directory))
+            result = _run_separation(
+                mp3_bytes,
+                device_str,
+                Path(self.directory),
+                file_item.filename,
+            )
             self._send_json(200, result)
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})
@@ -266,6 +280,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Optional second artifact path to preload in the compare UI (must live inside the project root).",
     )
+    parser.add_argument(
+        "--benchmark",
+        default=None,
+        help="Optional benchmark / evidence JSON path to preload via ?benchmark= (must live inside the project root).",
+    )
     return parser.parse_args(argv)
 
 
@@ -276,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         artifact = _encode_compare_artifact(args.artifact)
         artifact2 = _encode_compare_artifact(args.artifact2)
+        benchmark = _encode_compare_artifact(args.benchmark) if args.benchmark else None
     except ValueError as exc:
         print(f"compare-demo: invalid artifact path — {exc}", file=sys.stderr)
         return 2
@@ -296,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     host, port = server.server_address[:2]
-    compare_url = _build_compare_url(str(host), port, artifact, artifact2)
+    compare_url = _build_compare_url(str(host), port, artifact, artifact2, benchmark)
     print(f"compare-demo: serving {directory} at {compare_url}", flush=True)
 
     try:

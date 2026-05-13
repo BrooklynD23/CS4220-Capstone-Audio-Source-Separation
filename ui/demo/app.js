@@ -31,6 +31,14 @@ const lanes = Object.fromEntries(STEMS.map((stem) => [stem, {
 let playingStem = null;
 let activeAudio = null;
 
+/** Paths from the API are repo-relative; resolve from site root so /ui/demo/ fetches are not nested under /ui/demo/. */
+function audioUrlFromServerPath(serverPath) {
+  if (!serverPath) return serverPath;
+  if (/^https?:\/\//i.test(serverPath)) return serverPath;
+  const trimmed = serverPath.replace(/^\/+/, '');
+  return `/${trimmed}`;
+}
+
 function showError(message) {
   el.errorBanner.textContent = message;
   el.errorBanner.classList.remove('is-hidden');
@@ -85,9 +93,13 @@ async function runSeparation() {
 
 async function renderStems(stemUrls) {
   for (const stem of STEMS) {
-    const url = stemUrls[stem];
-    if (!url) continue;
+    const path = stemUrls[stem];
+    if (!path) continue;
+    const url = audioUrlFromServerPath(path);
     const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Failed to load ${stem} (${resp.status}): ${path}`);
+    }
     const buffer = await resp.arrayBuffer();
     const samples = decodePcmWav(buffer);
     drawWaveform(lanes[stem].waveform, samples);

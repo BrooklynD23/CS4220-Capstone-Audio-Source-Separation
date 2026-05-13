@@ -13,6 +13,7 @@ The `live_runtime` package is the core runtime library for audio source separati
 | [mic_ingest](mic_ingest.md) | `mic_ingest.py` | Microphone capture via sounddevice with a fake backend for tests |
 | [video_ingest](video_ingest.md) | `video_ingest.py` | Video container audio extraction |
 | [stem_router](stem_router.md) | `stem_router.py` | WAV stem writing and output path routing |
+| [umx_separator](umx_separator.md) | `umx_separator.py` | Optional Open-Unmix `umxhq` full-mode separation (Torch extra) |
 
 ## Package Structure
 
@@ -25,7 +26,8 @@ live_runtime/
 ├── mp3_ingest.py     # ffmpeg decode pipeline
 ├── mic_ingest.py     # sounddevice capture pipeline
 ├── video_ingest.py   # Video audio extraction
-└── stem_router.py    # Stem WAV output
+├── stem_router.py    # Stem WAV output (+ mix WAV helper)
+└── umx_separator.py  # Full-mode umxhq (optional torch/openunmix)
 ```
 
 ## Typical Workflow

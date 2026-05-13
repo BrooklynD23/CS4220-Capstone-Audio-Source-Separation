@@ -66,6 +66,21 @@ def load_umxhq_separator(device: str = "cuda") -> Any:
     return separator
 
 
+def _int_sample_rate_hz(sample_rate: Any) -> int:
+    """Open-Unmix may expose ``sample_rate`` as a scalar torch.Tensor; wave needs a Python int."""
+    if hasattr(sample_rate, "item"):
+        return int(sample_rate.item())
+    return int(sample_rate)
+
+
+def _sync_device_timers(device: str) -> None:
+    """Await queued GPU work so perf timers reflect completed kernels."""
+    if device == "cuda":
+        import torch
+
+        torch.cuda.synchronize()
+
+
 def separate_tensor(
     audio: "torch.Tensor",
     sample_rate_hz: int,
@@ -73,6 +88,10 @@ def separate_tensor(
     device: str = "cuda",
 ) -> SeparationResult:
     """Run umxhq on a (channels, samples) float32 tensor.
+
+    Mirrors ``openunmix.model.Separator.forward`` with per-stage wall times:
+    ``stft_ms`` (resample + STFT + complex norm), ``infer_ms`` (target nets + Wiener),
+    ``istft_ms`` (inverse STFT).
 
     Args:
         audio: shape (channels, samples) float32
@@ -85,29 +104,93 @@ def separate_tensor(
     """
     import torch
     import openunmix.utils as utils
+    from openunmix.filtering import wiener
 
+    sep_sr = _int_sample_rate_hz(separator.sample_rate)
     audio_device = audio.to(device)
-    audio_prep = utils.preprocess(audio_device, sample_rate_hz, separator.sample_rate)
 
-    t0 = time.perf_counter()
+    _sync_device_timers(device)
+    t_stft = time.perf_counter()
     with torch.no_grad():
-        estimates_raw = separator(audio_prep)
-    infer_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+        audio_prep = utils.preprocess(audio_device, sample_rate_hz, sep_sr)
+        mix_stft = separator.stft(audio_prep)
+        X = separator.complexnorm(mix_stft)
+    _sync_device_timers(device)
+    stft_ms = round((time.perf_counter() - t_stft) * 1000.0, 3)
+
+    nb_sources = separator.nb_targets
+    nb_samples = audio_prep.shape[0]
+
+    _sync_device_timers(device)
+    t_infer = time.perf_counter()
+    with torch.no_grad():
+        spectrograms = torch.zeros(X.shape + (nb_sources,), dtype=audio_prep.dtype, device=X.device)
+        for j, (_target_name, target_module) in enumerate(separator.target_models.items()):
+            target_spectrogram = target_module(X.detach().clone())
+            spectrograms[..., j] = target_spectrogram
+
+        spectrograms = spectrograms.permute(0, 3, 2, 1, 4)
+        mix_stft_perm = mix_stft.permute(0, 3, 2, 1, 4)
+
+        if separator.residual:
+            nb_sources += 1
+
+        if nb_sources == 1 and separator.niter > 0:
+            raise RuntimeError(
+                "Cannot use EM if only one target is estimated. "
+                "Provide two targets or create an additional one with `--residual`"
+            )
+
+        dev = mix_stft_perm.device
+        nb_frames = spectrograms.shape[1]
+        targets_stft = torch.zeros(
+            mix_stft_perm.shape + (nb_sources,),
+            dtype=audio_prep.dtype,
+            device=mix_stft_perm.device,
+        )
+        for sample in range(nb_samples):
+            pos = 0
+            wiener_win_len = separator.wiener_win_len if separator.wiener_win_len else nb_frames
+            while pos < nb_frames:
+                end = min(nb_frames, pos + wiener_win_len)
+                cur_frame = torch.arange(pos, end, device=dev)
+                pos = int(cur_frame[-1].item()) + 1
+
+                targets_stft[sample, cur_frame] = wiener(
+                    spectrograms[sample, cur_frame],
+                    mix_stft_perm[sample, cur_frame],
+                    separator.niter,
+                    softmask=separator.softmask,
+                    residual=separator.residual,
+                )
+
+        targets_stft = targets_stft.permute(0, 5, 3, 2, 1, 4).contiguous()
+
+    _sync_device_timers(device)
+    infer_ms = round((time.perf_counter() - t_infer) * 1000.0, 3)
+
+    _sync_device_timers(device)
+    t_istft = time.perf_counter()
+    with torch.no_grad():
+        estimates_raw = separator.istft(targets_stft, length=audio_prep.shape[2])
+    _sync_device_timers(device)
+    istft_ms = round((time.perf_counter() - t_istft) * 1000.0, 3)
+
+    total_ms = round(stft_ms + infer_ms + istft_ms, 3)
 
     estimates = separator.to_dict(estimates_raw)
     stems: dict[str, np.ndarray] = {}
     for target, tensor in estimates.items():
-        # shape: (batch, channels, samples) → squeeze batch → (channels, samples)
         stems[target] = tensor.squeeze(0).cpu().numpy()
 
     return SeparationResult(
         stems=stems,
-        sample_rate_hz=separator.sample_rate,
+        sample_rate_hz=sep_sr,
         timings=SeparationTimings(
-            stft_ms=0.0,
+            stft_ms=stft_ms,
             infer_ms=infer_ms,
-            istft_ms=0.0,
-            total_ms=infer_ms,
+            istft_ms=istft_ms,
+            total_ms=total_ms,
         ),
     )
 

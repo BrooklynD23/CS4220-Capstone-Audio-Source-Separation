@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from live_runtime.contracts import LiveRuntimeResult, SourceDescriptor, validate_live_runtime_result
+from live_runtime.contracts import LiveRuntimeResult, SourceDescriptor, StageTimings, validate_live_runtime_result
 from live_runtime.live_core import DEFAULT_MODEL_PATH, build_live_runtime_result, resolve_live_model_path
 from live_runtime.mp3_ingest import (
     DecodeFailedError,
@@ -33,7 +33,13 @@ from live_runtime.source_ingest import (
     build_mp3_source_descriptor,
     build_source_ingest,
 )
-from live_runtime.stem_router import StemRoutingError, resolve_live_stem_routing, write_live_stems, write_live_stems_from_arrays
+from live_runtime.stem_router import (
+    StemRoutingError,
+    resolve_live_stem_routing,
+    write_live_mix_wav,
+    write_live_stems,
+    write_live_stems_from_arrays,
+)
 from live_runtime.video_ingest import build_video_source_descriptor
 
 DEFAULT_MP3_INPUT_PATH = PROJECT_ROOT / "fixtures/audio/demo_mix.mp3"
@@ -296,7 +302,7 @@ def _build_artifact(
 
     routing = resolve_live_stem_routing(output_dir)
 
-    infer_ms_real: float | None = None
+    stage_timings_override: StageTimings | None = None
     separation_result = None
     if mode == "full":
         try:
@@ -310,7 +316,13 @@ def _build_artifact(
                 separator,
                 actual_device,
             )
-            infer_ms_real = separation_result.timings.infer_ms
+            t = separation_result.timings
+            stage_timings_override = StageTimings(
+                stft_ms=t.stft_ms,
+                infer_ms=t.infer_ms,
+                istft_ms=t.istft_ms,
+                total_ms=t.total_ms,
+            )
             device_used = "gpu" if actual_device == "cuda" else actual_device
         except Exception as exc:
             payload = _build_failure_payload(
@@ -342,7 +354,7 @@ def _build_artifact(
         mode=mode,
         model_path=model_resolution.requested_model_path,
         stem_routing=routing,
-        infer_ms_override=infer_ms_real,
+        stage_timings_override=stage_timings_override,
     )
 
     payload = result.to_dict()
@@ -352,7 +364,8 @@ def _build_artifact(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the live smoke separation flow and emit a JSON runtime artifact plus four stem WAVs.",
+        description="Run the live smoke separation flow and emit a JSON runtime artifact, mix.wav "
+        "(decoded source), plus four stem WAVs.",
     )
     parser.add_argument(
         "--source-mode",
@@ -370,7 +383,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
-        help="Directory for the four stem outputs.",
+        help="Directory for mix.wav plus the four stem outputs.",
     )
     parser.add_argument(
         "--artifact-path",
@@ -485,9 +498,19 @@ def main(argv: list[str] | None = None) -> int:
                 )
             else:
                 write_live_stems(ingest_envelope, output_dir)
+            write_live_mix_wav(
+                output_dir,
+                sample_rate_hz=int(ingest_envelope.decoded_audio.sample_rate_hz),
+                pcm=ingest_envelope.decoded_audio.pcm,
+            )
             _write_json_atomic(artifact_path, result_payload)
             print(f"live_runtime_artifact: {artifact_path}")
-            print(f"live_stems: {output_dir / 'vocals.wav'} {output_dir / 'drums.wav'} {output_dir / 'bass.wav'} {output_dir / 'other.wav'}")
+            mix_path = output_dir / "mix.wav"
+            print(
+                f"live_stems: {mix_path} "
+                f"{output_dir / 'vocals.wav'} {output_dir / 'drums.wav'} "
+                f"{output_dir / 'bass.wav'} {output_dir / 'other.wav'}",
+            )
             if result_payload["health_state"] != "healthy":
                 print(
                     f"live_runtime_health[{result_payload['health_state']}]: {result_payload['health_reason']}",

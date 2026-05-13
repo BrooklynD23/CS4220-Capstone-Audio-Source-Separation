@@ -72,6 +72,28 @@ def test_main_prints_single_or_dual_compare_url(monkeypatch, capsys):
     assert "artifact2=" not in out_single
 
 
+def test_main_prints_benchmark_query_when_flag_passed(monkeypatch, capsys):
+    monkeypatch.setattr(serve_compare_demo, "ThreadingHTTPServer", _FakeHTTPServer)
+    monkeypatch.setattr(serve_compare_demo.CompareDemoHandler, "log_message", lambda self, format, *args: None)
+
+    artifact = PROJECT_ROOT / "artifacts" / "live" / "cpu run" / "live_runtime_result.json"
+    bench = PROJECT_ROOT / "tests" / "fixtures" / "ui" / "compare" / "benchmark_evidence_mini.json"
+
+    exit_code = serve_compare_demo.main([
+        "--directory",
+        str(PROJECT_ROOT),
+        "--artifact",
+        str(artifact),
+        "--benchmark",
+        str(bench),
+    ])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "benchmark=" in out
+    assert "benchmark_evidence_mini.json" in out
+
+
 def test_main_rejects_artifact2_outside_project_root(tmp_path, capsys):
     outside = tmp_path.parent / "outside" / "bad.json"
 

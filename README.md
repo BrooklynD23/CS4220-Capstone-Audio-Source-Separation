@@ -1,72 +1,192 @@
-# CS4220 Capstone — Audio Source Separation
+# CS4220 Capstone — Audio Source Separation Harness
 
-This repository contains the reproducible evaluation + timing harness for the M001/S01 UMX proof path.
+Reproducible evaluation, benchmarking, and **contract-first live runtime** tooling for audio source separation (Open-Unmix / Demucs telemetry paths). The repo validates ONNX export → optional TensorRT, runs **live separation** from MP3, microphone, or video audio with JSON + WAV artifacts, and ships a **browser compare UI** for inspection and CPU/GPU A/B listens.
 
-## Quick Start
+---
+
+## Highlights
+
+| Area | Entry point | Output |
+|------|-------------|--------|
+| Interactive runs | [`launch.py`](launch.py) | `artifacts/live/...` + opens compare UI URLs |
+| Live CLI | [`scripts/live/run_live_separation.py`](scripts/live/run_live_separation.py) | `live_runtime_result.json`, four stems, **`mix.wav`** (on success) |
+| Compare UI | [`scripts/ui/serve_compare_demo.py`](scripts/ui/serve_compare_demo.py) | `http://127.0.0.1:8000/ui/compare/` (+ optional `POST /api/separate`) |
+| Contracts | [`live_runtime/contracts.py`](live_runtime/contracts.py), [`artifacts/schema/live_runtime_result.schema.json`](artifacts/schema/live_runtime_result.schema.json) | Schema-validated JSON |
+
+**Artifacts policy:** Generated runs under `artifacts/live/`, `artifacts/bench/`, etc. are normally **local only** — they are not required in git (JSON schemas under `artifacts/schema/` are versioned).
+
+---
+
+## Documentation map
+
+| Topic | Doc |
+|-------|-----|
+| Index | [`docs/README.md`](docs/README.md) |
+| Architecture diagrams | [`docs/architecture/README.md`](docs/architecture/README.md) |
+| `live_runtime` API | [`docs/api/README.md`](docs/api/README.md) |
+| Scripts & verifiers | [`docs/scripts/README.md`](docs/scripts/README.md) |
+| Compare UI | [`docs/ui/README.md`](docs/ui/README.md) |
+| Tests | [`docs/tests/README.md`](docs/tests/README.md) |
+| Operations | [`docs/ops/RUNBOOK.md`](docs/ops/RUNBOOK.md) |
+| Config / schemas | [`docs/config/README.md`](docs/config/README.md) |
+| Reproducibility | [`configs/environment.lock.md`](configs/environment.lock.md) |
+| Course materials | [`docs/reports/CAPSTONE_PROGRESS_REPORT.md`](docs/reports/CAPSTONE_PROGRESS_REPORT.md), [`docs/reports/CS4220_FINAL_PROJECT_PROPOSAL.pdf`](docs/reports/CS4220_FINAL_PROJECT_PROPOSAL.pdf) |
+| Archived agent plans | [`docs/archive/README.md`](docs/archive/README.md) |
+
+ Maintainer / AI onboarding: [`CLAUDE.md`](CLAUDE.md).
+
+---
+
+## Repository layout
+
+```
+live_runtime/          # Contracts, ingest, model-path resolution, stem routing, optional UMX full separation
+scripts/               # eval, export, benchmark, live CLI, UI server, verify
+tests/                  # pytest + Playwright UI tests
+ui/compare/             # Canonical vanilla-JS compare + upload shell
+ui/demo/                # Redirects to /ui/compare/
+artifacts/schema/       # JSON Schema contracts (tracked)
+fixtures/audio|video/   # Deterministic smoke media (tracked)
+configs/               # environment.lock.md — reproducibility pinboard
+docs/                   # Structured reference + reports + archived plans
+```
+
+---
+
+## Quick start
+
+**Python:** `>=3.10,<3.15` (see [`pyproject.toml`](pyproject.toml)).
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
+# Windows:
+.venv\Scripts\activate
+# Linux/macOS:
+# source .venv/bin/activate
+
+pip install -e ".[dev]"
 ```
 
-## S01 Reproducibility Flow
+Optional extras:
 
-Run the full slice verification contract (tests + smoke artifact generation + schema checks + export/build dry-run):
+- **Mic:** `pip install -e ".[mic]"` (PortAudio-backed capture)
+- **GPU compare / launcher full mode:** `pip install -e ".[gpu]"` or follow CUDA wheel flow in [`launch.py`](launch.py) / [`CLAUDE.md`](CLAUDE.md)
+
+**Smoke fixtures** live at `fixtures/audio/demo_mix.mp3` and `fixtures/video/demo_mix.mp4`.
+
+Place weights for launcher **Full** gating / comparisons at `artifacts/models/umx-live.pt` if needed (`scripts/models/bootstrap_umx_live_checkpoint.py` documents how pretrained `umxhq` relates to this path).
+
+---
+
+## High-level system architecture
+
+```mermaid
+flowchart LR
+  subgraph entrypoints [Entry_points]
+    launch[launch.py]
+    cli[run_live_separation.py]
+    server[serve_compare_demo.py]
+  end
+
+  subgraph livePkg [live_runtime]
+    ingest[source_ingest_mp3_mic_video]
+    core[live_core_model_resolution]
+    sep[umx_separator_optional_full]
+    stems[stem_router_WAV_writes]
+    contracts[contracts_schema_validation]
+  end
+
+  subgraph outputs [Artifacts]
+    json[out_live_runtime_result.json]
+    wavs[out_four_stems_and_mix.wav]
+    schemaRef[artifacts_schema_contracts]
+  end
+
+  launch --> cli
+  server -->|"POST_api_separate"| cli
+  server -->|"static_ui"| uiCmp[ui_compare]
+
+  cli --> ingest
+  ingest --> core
+  core -->|"mode_smoke"| stems
+  core -->|"mode_full"| sep
+  sep --> stems
+
+  stems --> wavs
+  core --> contracts
+  contracts --> json
+
+  uiCmp -->|"fetch_JSON_WAV"| json
+  uiCmp --> wavs
+  schemaRef -.->|"validates"| json
+```
+
+---
+
+## Live runtime data flow
+
+```mermaid
+flowchart LR
+  src[MP3_mic_or_video_audio]
+  dec[DecodedAudio_chunks]
+  env[SourceIngestEnvelope]
+  result[LiveRuntimeResult]
+  fs[Filesystem_OUTPUT_DIR]
+
+  src --> dec
+  dec --> env
+  env --> result
+  result -->|"live_runtime_result.json"| fs
+  env -->|"write_live_stems_or_full_arrays"| fs
+```
+
+- **Smoke** (`--mode smoke`): deterministic pipeline exercise — vocals PCM, other stems silence unless full separation runs.
+- **Full** (`--mode full`): Open-Unmix **`umxhq` with `pretrained=True`** via [`live_runtime/umx_separator.py`](live_runtime/umx_separator.py) when torch/openunmix are installed; emits real four-stem WAVs via `write_live_stems_from_arrays`.
+
+**Model path resolution** ([`live_core.resolve_live_model_path`](live_runtime/live_core.py)): only **`artifacts/models/umx-live.pt`** and **`artifacts/models/demucs-live.pt`** are “supported” telemetry paths; anything else falls back to the default **UMX** path for **`fallback_applied` / verifier contracts**. The live CLI’s **full** separation path still loads **UMX pretrained** weights — Demucs `.pt` is not separate inference glue in this slice.
+
+---
+
+## Compare UI quick start
 
 ```bash
-bash scripts/verify/s01_check.sh
+python scripts/ui/serve_compare_demo.py
+# Open printed URL — typically ends in /ui/compare/
 ```
 
-The verifier writes artifacts under:
+Launcher (`python launch.py`) can open URLs with **`?artifact=`**, optional **`artifact2`** (dual CPU/GPU stem waveforms), and **`benchmark=`** when a capstone manifest exists. **`/ui/demo/`** redirects to **`/ui/compare/`**.
 
-- `artifacts/eval/`
-- `artifacts/bench/`
-- `artifacts/export/`
+Deep reference: [`docs/ui/README.md`](docs/ui/README.md).
 
-## S02 Live Smoke Flow
+---
 
-Run the live MP3 → four-stem runtime contract check and its failure-path check with one command:
+## Verification
+
+**Automated:**
 
 ```bash
-bash scripts/verify/s02_check.sh
+pytest
+python -m playwright install chromium   # once, for UI tests
 ```
 
-The live smoke command writes:
-
-- `artifacts/live/<run>/live_runtime_result.json`
-- `artifacts/live/<run>/vocals.wav`
-- `artifacts/live/<run>/drums.wav`
-- `artifacts/live/<run>/bass.wav`
-- `artifacts/live/<run>/other.wav`
-
-The runtime artifact is schema-validated and preserves `status`, `error_stage`, timing fields, queue depth, drop count, and stem routing metadata even when the run fails.
-
-For the M002 live-runtime contract, run:
+Slice verifiers (bash):
 
 ```bash
-bash scripts/verify/m002_s01_check.sh
+bash scripts/verify/s01_check.sh       # ONNX export + schema
+bash scripts/verify/s02_check.sh       # Live MP3 → stems + JSON
+bash scripts/verify/m002_s01_check.sh # Demucs *path / fallback* contracts
+bash scripts/verify/s06_check.sh       # Capstone evidence bundle
 ```
 
-That verifier exercises the supported Demucs request path at `artifacts/models/demucs-live.pt` and a separate unsupported fallback sentinel, so the slice contract distinguishes the first-class four-stem Demucs contract from visible fallback behavior.
+Successful live runs emit under `artifacts/live/<run>/`:
 
-## S06 Final Capstone Evidence Bundle
+- `live_runtime_result.json`
+- `vocals.wav`, `drums.wav`, `bass.wav`, `other.wav`
+- **`mix.wav`** — decoded mono PCM for the Input lane when `input` is not already a WAV path
 
-Run the final milestone verifier to compose the evaluation summary, live throughput benchmark, mic-latency benchmark, live-runtime proof, and compare-UI smoke evidence into one manifest:
+---
 
-```bash
-bash scripts/verify/s06_check.sh
-```
-
-The final bundle writes fresh artifacts under `artifacts/bench/s06-capstone-*/` and produces the stable manifest at:
-
-- `artifacts/bench/capstone_evidence_manifest.json`
-
-The assembled manifest preserves the ordered phases `evaluation → throughput → mic_latency → live_runtime → compare_ui` and keeps phase-level failure states visible instead of collapsing them into a single success/failure bit.
-
-## Local / Dry-Run Mode (CI-safe)
-
-Use dry-run when GPU/TensorRT are unavailable:
+## Local / CI-safe ONNX + TRT dry-run
 
 ```bash
 python scripts/export/export_umx_onnx.py \
@@ -80,15 +200,15 @@ python scripts/export/export_umx_onnx.py \
 bash scripts/export/build_trt_engine.sh \
   --onnx artifacts/export/umx-smoke.onnx \
   --engine artifacts/bench/trt/umx-smoke.engine \
-  --min-shape 1x2x22050 \
-  --opt-shape 1x2x44100 \
-  --max-shape 1x2x88200 \
+  --min-shape 1x2x22050 --opt-shape 1x2x44100 --max-shape 1x2x88200 \
   --dry-run
 ```
 
-## GPU Build Mode
+---
 
-When TensorRT is installed and `trtexec` is available:
+## GPU TensorRT build (optional)
+
+When `trtexec` is installed:
 
 ```bash
 bash scripts/export/build_trt_engine.sh \
@@ -101,4 +221,8 @@ bash scripts/export/build_trt_engine.sh \
   --timeout-s 600
 ```
 
-For deterministic reruns and environment assumptions, see `configs/environment.lock.md`.
+---
+
+## License
+
+This project is released under the [MIT License](LICENSE).

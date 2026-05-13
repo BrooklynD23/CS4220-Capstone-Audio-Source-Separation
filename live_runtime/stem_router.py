@@ -19,6 +19,7 @@ DEFAULT_VOCALS_NAME = "vocals.wav"
 DEFAULT_DRUMS_NAME = "drums.wav"
 DEFAULT_BASS_NAME = "bass.wav"
 DEFAULT_OTHER_NAME = "other.wav"
+DEFAULT_MIX_NAME = "mix.wav"
 _log = logging.getLogger(__name__)
 
 
@@ -60,6 +61,24 @@ def _write_wav(path: Path, *, sample_rate_hz: int, pcm: bytes) -> None:
         handle.setsampwidth(2)
         handle.setframerate(sample_rate_hz)
         handle.writeframes(pcm)
+
+
+def write_live_mix_wav(
+    output_dir: Path | str,
+    *,
+    sample_rate_hz: int,
+    pcm: bytes,
+    mix_name: str = DEFAULT_MIX_NAME,
+) -> Path:
+    """Write mono 16-bit PCM ``mix.wav`` (decoded source) beside stem outputs.
+
+    Consumed by the compare UI Input lane waveform and playback when the artifact
+    ``input`` field is not a ``.wav`` path.
+    """
+
+    dest = Path(output_dir) / mix_name
+    _write_wav(dest, sample_rate_hz=sample_rate_hz, pcm=pcm)
+    return dest
 
 
 def _build_silence_pcm(source_ingest: SourceIngestEnvelope) -> bytes:
