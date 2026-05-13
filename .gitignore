@@ -27,8 +27,29 @@ vendor/
 *.log
 coverage/
 .coverage
+.pytest_cache/
+htmlcov/
 .cache/
 tmp/
 .claude/
 claude-progress.txt
 init.sh
+
+# setuptools editable install junk
+*.egg-info/
+
+# Cursor / agent local state
+.superpowers/
+
+# Proprietary scratch media — do not commit commercial tracks or personal rips
+fixtures/audio/Test1.mp3
+fixtures/audio/JustinBiebier.mp3
+
+# Generated benchmarks / runs / binaries (tracked JSON schemas remain under artifacts/schema/)
+artifacts/bench/
+artifacts/eval/
+artifacts/export/
+artifacts/live/
+artifacts/models/
+artifacts/ui-compare-autostem/
+artifacts/ui-compare-test/

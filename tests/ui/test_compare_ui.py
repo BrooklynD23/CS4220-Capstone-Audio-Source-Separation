@@ -7,6 +7,7 @@ import struct
 import threading
 import wave
 import shutil
+from urllib.parse import quote
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,6 +30,7 @@ MALFORMED_FIXTURE = PROJECT_ROOT / "tests/fixtures/ui/compare/malformed.json"
 DEGRADED_FIXTURE = PROJECT_ROOT / "tests/fixtures/ui/compare/degraded.json"
 FALLBACK_FIXTURE = PROJECT_ROOT / "tests/fixtures/ui/compare/fallback.json"
 VIDEO_AUDIO_FIXTURE = PROJECT_ROOT / "tests/fixtures/ui/compare/video_audio.json"
+DEMO_MP3_FIXTURE = PROJECT_ROOT / "fixtures/audio/demo_mix.mp3"
 COMPARE_BASE_URL = os.environ.get("COMPARE_DEMO_BASE_URL") or os.environ.get("BASE_URL")
 
 
@@ -62,7 +64,13 @@ def _load_compare_page(base_url: str):
     return playwright, browser, page
 
 
+def _expand_manual_loaders(page) -> None:
+    """Open the Manual loaders <details> so artifact/benchmark/WAV controls are visible to Playwright."""
+    page.locator("#manual-loaders").evaluate("el => { el.open = true; }")
+
+
 def _load_fixture(page, fixture: Path) -> None:
+    _expand_manual_loaders(page)
     page.set_input_files("#artifact-file", str(fixture))
     page.click("#load-button")
     expected_label = f"Loaded file: {fixture.name}"
@@ -175,6 +183,7 @@ def test_compare_ui_switches_modes_without_replacing_loaded_artifact(compare_ser
 def test_compare_ui_requires_a_selected_file_before_loading(compare_server: str) -> None:
     playwright, browser, page = _load_compare_page(compare_server)
     try:
+        _expand_manual_loaders(page)
         page.click('#load-button')
         page.wait_for_function("document.querySelector('[data-testid=\"error-banner\"]').offsetParent !== null")
 
@@ -345,6 +354,7 @@ def test_compare_ui_loads_evidence_manifest_and_calculates_benchmark_delta(compa
 
     playwright, browser, page = _load_compare_page(compare_server)
     try:
+        _expand_manual_loaders(page)
         page.set_input_files("#benchmark-file", str(manifest_path))
         page.click("#load-benchmark-button")
         page.wait_for_function("document.querySelector('[data-testid=\"benchmark-delta\"]').textContent === '4.00x'")
@@ -373,6 +383,7 @@ def test_compare_ui_loads_wav_stems_and_renders_waveform_lanes(compare_server: s
 
     playwright, browser, page = _load_compare_page(compare_server)
     try:
+        _expand_manual_loaders(page)
         page.set_input_files("#input-audio-file", str(input_wav))
         page.set_input_files("#stem-audio-files", [str(path) for path in stem_paths])
         page.click("#load-audio-button")
@@ -392,9 +403,60 @@ def test_compare_ui_loads_wav_stems_and_renders_waveform_lanes(compare_server: s
                 lane,
             )
             assert pixel_total > 0
+        for lane in ["input", "vocals", "drums", "bass", "other"]:
+            assert page.locator(f'[data-testid="lane-play-{lane}"]').is_enabled()
     finally:
         browser.close()
         playwright.stop()
+
+
+def test_compare_ui_auto_loads_stem_waveforms_from_artifact_url(compare_server: str) -> None:
+    """Preloaded ?artifact= URL fetches stem WAVs from stem_paths without file inputs."""
+    bundle = PROJECT_ROOT / "artifacts" / "ui-compare-autostem"
+    try:
+        bundle.mkdir(parents=True, exist_ok=True)
+        stems: dict[str, str] = {}
+        for name, freq in [("vocals", 220.0), ("drums", 330.0), ("bass", 440.0), ("other", 550.0)]:
+            stem_path = bundle / f"{name}.wav"
+            _write_wav_fixture(stem_path, frequency_hz=freq)
+            stems[name] = f"artifacts/ui-compare-autostem/{name}.wav"
+
+        payload = json.loads(HEALTHY_FIXTURE.read_text(encoding="utf-8"))
+        payload["stem_paths"] = stems
+        json_path = bundle / "runtime.json"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        rel = json_path.relative_to(PROJECT_ROOT).as_posix()
+
+        playwright, browser, page = _load_compare_page(compare_server)
+        try:
+            page.goto(
+                f"{compare_server.rstrip('/')}/ui/compare/?artifact=/{rel}",
+                wait_until="networkidle",
+            )
+            page.wait_for_function(
+                """() => ['vocals', 'drums', 'bass', 'other'].every(
+                  (lane) => document.querySelector(`[data-testid="waveform-canvas-${lane}"]`)?.dataset.rendered === 'true'
+                )""",
+            )
+            count = page.locator('[data-testid="audio-file-count"]').text_content() or ""
+            assert "4 stems (auto)" in count
+            for lane in ["vocals", "drums", "bass", "other"]:
+                pixel_total = page.evaluate(
+                    """lane => {
+                      const canvas = document.querySelector(`[data-testid="waveform-canvas-${lane}"]`);
+                      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+                      return Array.from(data).reduce((sum, value) => sum + value, 0);
+                    }""",
+                    lane,
+                )
+                assert pixel_total > 0
+            for lane in ["vocals", "drums", "bass", "other"]:
+                assert page.locator(f'[data-testid="lane-play-{lane}"]').is_enabled()
+        finally:
+            browser.close()
+            playwright.stop()
+    finally:
+        shutil.rmtree(bundle, ignore_errors=True)
 
 
 def test_compare_ui_renders_dual_artifact_compare(compare_server: str) -> None:
@@ -444,3 +506,67 @@ def test_compare_ui_renders_dual_artifact_compare(compare_server: str) -> None:
         browser.close()
         playwright.stop()
         shutil.rmtree(fixture_dir, ignore_errors=True)
+
+
+def test_compare_ui_preload_fetches_benchmark_and_hides_upload(compare_server: str) -> None:
+    art = quote("/tests/fixtures/ui/compare/healthy.json", safe="/")
+    bench = quote("/tests/fixtures/ui/compare/benchmark_evidence_mini.json", safe="/")
+    url = f"{compare_server.rstrip('/')}/ui/compare/?artifact={art}&benchmark={bench}"
+
+    playwright = sync_playwright().start()
+    browser = playwright.chromium.launch()
+    page = browser.new_page(viewport={"width": 1440, "height": 1400})
+    try:
+        page.goto(url, wait_until="networkidle")
+        assert page.evaluate("document.body.dataset.mode") == "preloaded"
+        assert not page.locator('[data-testid="upload-card"]').is_visible()
+        assert page.locator('[data-testid="benchmark-kind-cpu"]').text_content() == "cpu"
+        assert page.locator('[data-testid="benchmark-kind-gpu"]').text_content() == "gpu"
+        assert page.locator('[data-testid="benchmark-delta"]').text_content() == "4.00x"
+        details = page.locator('[data-testid="manual-loaders"]')
+        assert details.evaluate("el => !el.hasAttribute('open')")
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_compare_ui_manual_mode_shows_upload_card(compare_server: str) -> None:
+    playwright, browser, page = _load_compare_page(compare_server)
+    try:
+        assert page.evaluate("document.body.dataset.mode") == "manual"
+        assert page.locator('[data-testid="upload-card"]').is_visible()
+        details = page.locator('[data-testid="manual-loaders"]')
+        assert details.evaluate("el => !el.hasAttribute('open')")
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_compare_ui_upload_navigates_after_api_success(compare_server: str) -> None:
+    if not DEMO_MP3_FIXTURE.is_file():
+        pytest.skip("fixtures/audio/demo_mix.mp3 not present")
+
+    playwright = sync_playwright().start()
+    browser = playwright.chromium.launch()
+    page = browser.new_page(viewport={"width": 1440, "height": 1400})
+    try:
+
+        def _fulfill(route):
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"artifact_path": "artifacts/live/demo-fake/live_runtime_result.json"}),
+            )
+
+        page.route("**/api/separate", _fulfill)
+        page.goto(f"{compare_server.rstrip('/')}/ui/compare/", wait_until="networkidle")
+        page.set_input_files("#upload-file", str(DEMO_MP3_FIXTURE))
+        page.click("#upload-separate-btn")
+        page.wait_for_function(
+            "() => window.location.href.includes('demo-fake') "
+            "&& window.location.search.includes('artifact=')",
+            timeout=10000,
+        )
+    finally:
+        browser.close()
+        playwright.stop()

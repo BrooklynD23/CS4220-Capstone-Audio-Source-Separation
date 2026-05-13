@@ -2,6 +2,16 @@
 
 The compare UI is a single-page, zero-dependency vanilla JS interface for inspecting persisted `live_runtime_result.json` artifacts. It runs entirely in the browser with no build step and serves data from `artifacts/` over a local HTTP server.
 
+## Audience shell and launcher wiring
+
+`/ui/compare/` is the canonical surface: **Upload separation** (`POST /api/separate` → redirect to `?artifact=…`), **query preload** (`artifact`, optional `artifact2` for CPU/GPU stem lanes, optional `benchmark`), and **Manual loaders** tucked under a `<details>` block (hidden when the page boots in preloaded audience mode). [`launch.py`](../../launch.py) adds `benchmark=` to opened URLs when `artifacts/bench/capstone_evidence_manifest.json` exists and passes `--benchmark` into [`scripts/ui/serve_compare_demo.py`](../../scripts/ui/serve_compare_demo.py). [`ui/demo/index.html`](../../ui/demo/index.html) redirects to `/ui/compare/`.
+
+**Server and browser audio:** The live runtime writes **RIFF WAVE, 16-bit PCM, mono** (see `live_runtime/stem_router.py`). Successful CLI/API runs also emit **`mix.wav`** next to the four stems (`write_live_mix_wav`); the UI uses it for the Input lane when JSON `input` is not already a `.wav`. The browser decodes stems/mix via [`ui/shared/audio-render.js`](../../ui/shared/audio-render.js).
+
+**Debugging “WAV file must use RIFF/WAVE format”:** Usually means `fetch` returned non-WAV bytes (HTML error, 404, JSON). Paths in artifacts must normalize to **root-absolute** URLs (`/artifacts/...`) so requests from `/ui/compare/` hit the repo root the demo server exposes. Hard-refresh if an old script was cached.
+
+**Product scope:** This pipeline outputs **stem WAVs** (plus optional **`mix.wav`**), not a separated video file.
+
 ## Files
 
 | File | Role |
@@ -94,27 +104,45 @@ Five `<article>` cards laid out in a two-column CSS grid. Each `<dd>` element ha
 
 ---
 
-## 2. JavaScript Function Reference
+## 2. JavaScript Module (`app.js`)
 
-All functions live in `app.js` in module scope (no ES modules, no classes).
+The page loads `app.js` as an **`import`** module (`<script type="module">`) and **`../shared/audio-render.js`** for PCM WAV decoding and canvas draws.
+
+Application logic stays in module scope (no ES classes).
 
 ### 2.1 Constants
 
 | Name | Type | Purpose |
 |---|---|---|
-| `MODE_CONFIG` | `object` | Maps mode key → `{title, description}`. Single source of truth for mode labels. |
+| `MODE_CONFIG` | `object` | Maps mode key → `{title, description}`. Single source of truth for mode labels (single-artifact layouts). |
 | `STAGE_NOTES` | `object` | Maps lowercase stage name → human description shown on each stage card. |
-| `elements` | `object` | Cached `document.getElementById` / `querySelectorAll` results. Populated synchronously at parse time. |
-| `compareState` | `object` | Mutable singleton holding `{artifact, artifactToken, activeMode, lastModeMessage}`. |
+| `elements` | `object` | Cached DOM references populated at parse time. |
+| `compareState` | `object` | Mutable singleton holding artifact(s), benchmark state, per-lane playback URLs (`laneUrls`), `audioElement`, `activeMode`, etc. |
 | `emptyState` | `object` | Frozen template of dash placeholders (`'—'`) for every field; used by `setEmptyState()`. |
 
 `window.__compareState`, `window.__setCompareMode`, and `window.__loadCompareArtifact` are intentionally exposed for Playwright tests.
 
-### 2.2 Function table
+### 2.2 Audio preload, waveform lanes, and playback
+
+Browser behavior lives in [`ui/compare/app.js`](../../ui/compare/app.js):
+
+| Concern | Behavior |
+|---|---|
+| Serving | `scripts/ui/serve_compare_demo.py` serves the repo root so `fetch('/artifacts/live/…')` works from `/ui/compare/`. |
+| Query preload | `?artifact=/artifacts/…/live_runtime_result.json` fetches JSON; optional `artifact2` loads a dual CPU/GPU timing compare; optional `benchmark` fetches benchmark JSON. Audience mode hides heavy manual loaders by default. |
+| Stem canvases | `autoLoadStemWaveformsFromArtifact` fetches each `stem_paths` WAV, runs `decodePcmWav` (`ui/shared/audio-render.js`), draws waveform + spectrogram, and registers same-origin URLs for **lane playback**. Dual URL mode loads **stem** canvases (and stem **Play** targets) from the **secondary (GPU/accelerated) artifact**. |
+| Input lane (`mix.wav`) | If JSON `input` ends with `.wav`, that asset is fetched. Otherwise `mix.wav` beside the stems is used (successful `run_live_separation.py` writes it). If PCM fetch fails, the UI may register **playback-only** URL for common container extensions on the provenance input path (.mp3, .m4a, .mp4, etc.)—Input waveform/spectrogram stay blank until a PCM WAV succeeds. |
+| Lane playback | Each lane has a **Play** / **Pause** control (`data-testid="lane-play-<lane>"`). Only one lane plays at a time. **Play input** toggles the Input lane only; stem buttons play the fetched stem WAVs. |
+
+**Dual `artifact2` policy:** Panels + summary timing derive from **`compareState.artifact`** (primary, typically CPU from the launcher URL order). Stem waveforms **and stem playback URLs** in the shared lanes use **`artifact2`** (GPU). Input lane playback follows the primary `mix.wav` / input heuristic so it matches the CPU (primary) run’s decoded mix.
+
+Compare mode toggles (**Side-by-side / Overlay / Timeline**) rearrange **pipeline stage showcase** cards—not the waveform strip.
+
+### Core UI function table
 
 | Function | Signature | Purpose | DOM side-effects |
 |---|---|---|---|
-| `initialize` | `() → void` | Entry point. Sets initial mode, calls `setEmptyState`, attaches all event listeners. | Wires `change` on `#artifact-file`, `click` on `#load-button`, `click` on each `.mode-button`. |
+| `initialize` | `() → void` | Entry point. Calls `setEmptyState`, attaches listeners **including waveform / upload harness**, invokes **`initFromLocation()`**. | Listener wiring plus URL preload bootstrap. |
 | `setBanner` | `(message, {type?}) → void` | Updates the live feedback banners. `type='error'` shows the error banner and hides status; default shows status banner. | Writes `textContent` on `#error-banner` / `#status-banner`. Toggles `.is-hidden` on error banner. |
 | `setLoading` | `(isLoading) → void` | Disables/enables the load button and changes its label during async file read. | `loadButton.disabled`, `loadButton.textContent`. |
 | `setText` | `(node, value) → void` | Thin wrapper around `node.textContent = value`. | `textContent` on any element. |
@@ -155,14 +183,11 @@ All functions live in `app.js` in module scope (no ES modules, no classes).
 ### 3.1 Page load
 
 ```
-DOMContentLoaded (script defer)
-  └─ initialize()
-       ├─ compareState.activeMode = 'side-by-side'
-       ├─ setEmptyState()        → fills all fields with '—'
-       ├─ addEventListener('change', handleFileSelection) on #artifact-file
-       ├─ addEventListener('click', loadArtifactFromFile) on #load-button
-       ├─ addEventListener('click', () => setCompareMode(mode)) on each .mode-button
-       └─ setBanner('Awaiting a loaded artifact.')
+initialize()
+  └─ initFromLocation()                           → parses ?artifact=[&artifact2=][&benchmark=]
+       ├─ preload paths present → fetch JSON, render artifact(s), benchmark silent fetch
+       ├─ autoLoadStemWaveformsFromArtifact
+       └─ finishPreloadExtras(...)               → benchmark + Input auto-load (+ mix.wav heuristic)
 ```
 
 ### 3.2 File selection
@@ -220,24 +245,32 @@ User clicks a mode button (Side-by-side / Overlay / Timeline)
 
 ## 4. Artifact Data Source (`artifacts/`)
 
-The compare UI does **not** fetch data over HTTP on its own. It relies entirely on the browser `<input type="file">` to read a local JSON file from disk. The file must be a `live_runtime_result.json` produced by a live separation run.
+Artifacts are **`live_runtime_result.json`** documents validated by **`normalizeArtifact()`** (matching the **`live_runtime_result.schema.json`** assumptions).
 
-### 4.1 Expected artifact location
+Artifacts reach the shell through **any combination** of:
 
-Live runs write artifacts to:
+1. **`?artifact=`** ([, **`artifact2=`**][, **`benchmark=`]]) — `fetch` on the local demo origin.
+2. **Upload separation** workflow (`POST /api/separate`).
+3. **Manual loaders → Artifact file** (`<input type="file">` JSON read).
+
+Serving `artifacts/` beside `ui/` is required for **`fetch`** auto-loading (launcher default path).
+
+### 4.1 Expected locations and WAV companions
+
+Runs typically emit:
 
 ```
 artifacts/live/<run-id>/live_runtime_result.json
-```
-
-Additional WAV stems written alongside (not consumed by the UI):
-
-```
+artifacts/live/<run-id>/mix.wav          # succeeds only when CLI returns exit code 0
 artifacts/live/<run-id>/vocals.wav
 artifacts/live/<run-id>/drums.wav
 artifacts/live/<run-id>/bass.wav
 artifacts/live/<run-id>/other.wav
 ```
+
+**`mix.wav`:** mono 16‑bit PCM rendition of decoded input—used for the Input waveform/spectrogram and Play when JSON `input` points at `.mp4` / `.mp3` rather than PCM `.wav`.
+
+Older smoke outputs without **`mix.wav`** still render stem canvases whenever the WAVs exist under `artifacts/`; regenerate or use Manual loaders for Input / playback parity.
 
 ### 4.2 Required JSON schema
 
@@ -295,13 +328,15 @@ artifacts/live/<run-id>/other.wav
 
 `stage_timings` is flexible: an array is interpreted as index-aligned with `stages`; an object is keyed by stage name.
 
-### 4.3 How stem paths are displayed
+### 4.3 Stem paths versus canvas rendering
 
-Stem paths in `stem_paths` are displayed verbatim as text (the path strings from the artifact). The UI does not attempt to load the WAV files for audio playback — it is a metadata inspector, not an audio player.
+Stem path strings populate the **Stem** panel verbatim while **Canvas lanes** concurrently try to **`fetch`** the corresponding WAV URLs (artifact JSON load path or manual WAV selection). Playback uses **only** the Input/`mix.wav` binding described in §2.2—not the stem blobs.
 
 ---
 
 ## 5. Compare Modes
+
+When **`artifact2` is absent**, modes affect only the **`#stage-board`** flow. **`artifact2` present**: the dual timing board swaps in (`#compare-dual-board`) while waveform lanes obey §2.2 (primary vs secondary stem fetch).
 
 | Mode key | Layout class | Description |
 |---|---|---|
@@ -373,7 +408,7 @@ Options:
 
 ### 7.3 How the server works
 
-`serve_compare_demo.py` uses Python's `http.server.SimpleHTTPRequestHandler` wrapped in a `ThreadingHTTPServer`. It serves the **repository root** as the static root, so both `ui/compare/` (the app) and `artifacts/` (the output files) are reachable over HTTP from the same origin — which matters if future versions add `fetch`-based artifact loading.
+`serve_compare_demo.py` uses Python's `http.server.SimpleHTTPRequestHandler` wrapped in a `ThreadingHTTPServer`. It serves the **repository root** so `ui/compare/`, **`artifacts/`**, **`fixtures/`**, and **`POST /api/separate`** all share one origin—a requirement for **`fetch`/`<audio>`** against `/artifacts/...` paths emitted by persisted JSON artifacts.
 
 The server logs each request to stderr in the format:
 
@@ -383,14 +418,23 @@ compare-demo: 127.0.0.1 "GET /ui/compare/ HTTP/1.1" 200 -
 
 Shut down with Ctrl+C; the server closes cleanly and prints `compare-demo: stopped`.
 
-### 7.4 Loading an artifact
+### 7.4 Loading an artifact (typical launcher flow)
 
-1. Run a live separation to produce `artifacts/live/<run-id>/live_runtime_result.json`.
-2. Open the compare UI in the browser.
-3. Click **Artifact file** and select the JSON file from the OS file picker.
-4. Click **Load artifact**.
-5. All panels populate immediately from the parsed file. No network request is made.
-6. Use the **Side-by-side / Overlay / Timeline** buttons to switch the stage showcase layout.
+1. Run `launch.py`, `scripts/live/run_live_separation.py`, or **Upload separation** so JSON + WAVs appear under **`artifacts/live/...`**.
+2. Serve the demo: `python scripts/ui/serve_compare_demo.py`.
+3. Open the launcher-printed **`/ui/compare/?artifact=/artifacts/live/…/live_runtime_result.json[+&benchmark=]`** URLs (or `/ui/demo/` legacy redirect targets).
+4. The UI `fetch()`es artifacts + benchmark, auto-loads WAV canvases (`mix.wav`, stems); **Play/Pause** activates once Input binds (§2.2).
+5. Optional: expand **Manual loaders** for bespoke JSON/evidence uploads or manual WAV troubleshooting.
+
+Standalone **offline JSON-only** workflows still supported via **Manual loaders → Artifact loader** (`file:` origin means automatic WAV `fetch()` will fail—use **Waveform assets** loaders or open through the localhost server).
+
+### 7.5 Manual loaders-only flow
+
+1. Open `http://127.0.0.1:8000/ui/compare/` (or drag `ui/compare/index.html` for JSON-only previews).
+2. Expand **Manual loaders**.
+3. Select JSON → **Load artifact**.
+4. (Optional) **Load WAVs** for Input/stems if auto-fetch fails.
+5. Toggle compare modes identical to preload flow.
 
 ---
 

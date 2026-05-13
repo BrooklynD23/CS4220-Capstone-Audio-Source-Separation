@@ -4,13 +4,15 @@ This document captures the reproducibility assumptions for evaluation, timing, a
 
 ## Python Toolchain
 
-- Python: `>=3.10,<3.13`
+- Python: `>=3.10,<3.15`
 - Dependency lock source: `pyproject.toml`
 - Required pinned packages:
   - `PyYAML==6.0.2`
   - `jsonschema==4.23.0`
+  - `imageio-ffmpeg==0.6.0`
+  - `numpy>=1.24.0` (range pinned in `pyproject.toml`)
   - `pytest==8.3.5` (dev)
-  - `pytest-cov==6.0.0` (dev)
+  - `pytest-cov==7.1.0` (dev)
 
 ## Model and Runtime Versions
 

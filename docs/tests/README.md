@@ -150,7 +150,15 @@ pytest tests/ui/               # Playwright compare UI (requires Playwright brow
 python -m playwright install chromium
 ```
 
-UI tests are skipped automatically if `playwright` is not importable (`pytest.importorskip`).
+UI tests are skipped automatically if `playwright` is not importable (`pytest.importorskip`). They expand the **Manual loaders** `<details>` block before driving `#load-button` / benchmark / WAV controls.
+
+### Windows / WSL and bash-driven export tests
+
+`tests/export/test_export_pipeline_scripts.py` invokes `bash scripts/export/build_trt_engine.sh`. When `bash` resolves to **WSL**, the test harness `cd`s into the repo via `/mnt/<drive>/…`, exports `PYTHON=python3` so JSON logging uses the distro interpreter (Windows `python.exe` cannot write `/mnt/…` paths cleanly), and translates drive-letter arguments under `%TEMP%` to `/mnt/c/…`.
+
+### Coverage threshold
+
+Pytest’s defaults include `--cov-fail-under=80` (`pyproject.toml`). All tests can pass while total reported coverage sits slightly below 80% depending on which optional GPU/demo branches execute locally; use CI/Linux as the reference for the gate, or run `pytest --no-cov` when you only need functional signal.
 
 ### Slice verifier scripts
 

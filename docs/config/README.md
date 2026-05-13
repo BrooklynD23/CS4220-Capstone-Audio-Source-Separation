@@ -39,7 +39,7 @@ File: `pyproject.toml`
 | `version` | `0.1.0` | Current release version. |
 | `description` | Reproducible evaluation and benchmarking harness for UMX proof workflows. | Short summary shown on PyPI and `pip show`. |
 | `readme` | `README.md` | Long description source file. |
-| `requires-python` | `>=3.10,<3.13` | Supported Python range. Python 3.13 is explicitly excluded. |
+| `requires-python` | `>=3.10,<3.15` | Supported Python range; matches `[project]` in `pyproject.toml`. |
 
 ### Core Dependencies
 
@@ -49,8 +49,10 @@ These packages are installed by `pip install -e .` (or any equivalent install wi
 |---|---|---|
 | `PyYAML` | `6.0.2` | YAML parsing for eval protocol config (`scripts/eval/eval_protocol.yaml`). |
 | `jsonschema` | `4.23.0` | JSON Schema validation (Draft 2020-12) for all artifact outputs in `artifacts/schema/`. |
+| `imageio-ffmpeg` | `0.6.0` | Bundled `ffmpeg` binary hooks for video audio extraction (`live_runtime/video_ingest.py`). |
+| `numpy` | `>=1.24.0` | Numeric arrays for audio buffers and separation glue paths. |
 
-Both dependencies are pinned to exact versions to satisfy the reproducibility contract in `configs/environment.lock.md`.
+Pinned packages (`PyYAML`, `jsonschema`, `imageio-ffmpeg`) match the reproducibility contract in `configs/environment.lock.md`; `numpy` follows the lower bound from `[project.dependencies]`.
 
 ---
 
@@ -76,7 +78,7 @@ Installs testing and browser automation tools needed for the full test suite.
 | Package | Pinned Version | Purpose |
 |---|---|---|
 | `pytest` | `8.3.5` | Test runner. Minimum version required by `[tool.pytest.ini_options]` is `8.0`. |
-| `pytest-cov` | `6.0.0` | Coverage plugin for `--cov` flag; targets `live_runtime` and `scripts` packages. |
+| `pytest-cov` | `7.1.0` | Coverage plugin for `--cov` flag; default pytest options enforce `--cov=live_runtime` / `--cov=scripts` and `--cov-fail-under=80`. |
 | `playwright` | `1.54.0` | Headless browser for Playwright-based compare UI tests under `tests/ui/`. |
 
 ### `mic` extra
@@ -89,6 +91,10 @@ Installs hardware I/O support for real microphone capture.
 
 The `mic` extra is intentionally separate so CI environments without PortAudio can install `[dev]` cleanly. At runtime, `mic_ingest.py` imports `sounddevice` lazily, so the package will not crash on import if `sounddevice` is absent.
 
+### `gpu_launcher` and `gpu` extras
+
+CUDA PyTorch wheels are installed from the PyTorch wheel index (see `launch.py` / root README); `pip install -e .[gpu_launcher]` pulls Open-Unmix, Demucs, and plotting/audio deps **without** PyAudio. `pip install -e .[gpu]` adds `torch`, `torchaudio`, PyAudio, and the same model stack for full GPU separation and mic-capable demos.
+
 ---
 
 ## pytest Configuration
@@ -98,7 +104,7 @@ Section: `[tool.pytest.ini_options]` in `pyproject.toml`
 | Option | Value | Effect |
 |---|---|---|
 | `minversion` | `"8.0"` | pytest will exit with an error if the installed version is older than 8.0. |
-| `addopts` | `"-ra --strict-config --strict-markers"` | Default CLI flags appended to every invocation (see below). |
+| `addopts` | `"-ra --strict-config --strict-markers --cov=live_runtime --cov=scripts --cov-fail-under=80"` | Default CLI flags appended to every invocation (see below). |
 | `testpaths` | `["tests"]` | Only the `tests/` directory is scanned for test files; the project root and `live_runtime/` are not walked. |
 
 ### `addopts` flags explained
@@ -108,6 +114,8 @@ Section: `[tool.pytest.ini_options]` in `pyproject.toml`
 | `-ra` | Print a short summary of all non-passing tests (errors, failures, skips, xfails) at the end of the run. |
 | `--strict-config` | Treat unknown `[tool.pytest.ini_options]` keys as errors, preventing silent misconfiguration. |
 | `--strict-markers` | Any `@pytest.mark.*` decorator that is not registered in the config raises an error, preventing marker typos from silently skipping tests. |
+| `--cov=live_runtime` / `--cov=scripts` | Collect coverage for the runtime package and `scripts/` tree (mirrors `[tool.coverage.run]` omit list for heavy GPU/export paths). |
+| `--cov-fail-under=80` | Fail the run if total coverage falls below 80%. |
 
 ### Common invocations
 
@@ -362,12 +370,14 @@ This file is the authoritative statement of assumptions that must hold for the s
 
 | Assumption | Value |
 |---|---|
-| Python version range | `>=3.10,<3.13` |
+| Python version range | `>=3.10,<3.15` |
 | Dependency lock source | `pyproject.toml` |
 | `PyYAML` | `6.0.2` |
 | `jsonschema` | `4.23.0` |
+| `imageio-ffmpeg` | `0.6.0` |
+| `numpy` | `>=1.24.0` (see `pyproject.toml`) |
 | `pytest` | `8.3.5` (dev extra) |
-| `pytest-cov` | `6.0.0` (dev extra) |
+| `pytest-cov` | `7.1.0` (dev extra) |
 
 ### Model and Runtime Versions
 

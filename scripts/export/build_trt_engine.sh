@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u
 
+PYTHON_BIN="${PYTHON:-python}"
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -18,6 +20,7 @@ Usage:
 Notes:
 - Shapes must be three positive integers in BxCxS format (example: 1x2x44100)
 - This wrapper prints the exact trtexec command before execution for reproducibility.
+- Set PYTHON to a Python interpreter path when `python` is not on PATH for bash (e.g. Windows / WSL).
 USAGE
 }
 
@@ -27,7 +30,7 @@ fail() {
 }
 
 now_iso() {
-  python - <<'PY'
+  "$PYTHON_BIN" - <<'PY'
 from datetime import datetime, UTC
 print(datetime.now(UTC).isoformat())
 PY
@@ -40,7 +43,7 @@ write_log() {
   local ts
   ts="$(now_iso)"
   mkdir -p "$(dirname "$LOG_PATH")"
-  python - "$LOG_PATH" "$ts" "$status" "$stage" "$message" "$ONNX_PATH" "$ENGINE_PATH" "$TIMING_CACHE" "$FP16" "$DRY_RUN" <<'PY'
+  "$PYTHON_BIN" - "$LOG_PATH" "$ts" "$status" "$stage" "$message" "$ONNX_PATH" "$ENGINE_PATH" "$TIMING_CACHE" "$FP16" "$DRY_RUN" <<'PY'
 import json
 import sys
 from pathlib import Path

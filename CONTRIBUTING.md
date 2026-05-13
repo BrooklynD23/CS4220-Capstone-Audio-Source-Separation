@@ -28,7 +28,7 @@ Thank you for your interest in contributing! This document outlines the process 
 
 ## Development Setup
 
-**Requirements:** Python `>=3.10,<3.13`
+**Requirements:** Python `>=3.10,<3.15`
 
 ```bash
 # Create and activate a virtual environment

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python `>=3.10,<3.13`
+- Python `>=3.10,<3.15`
 - CUDA and NVIDIA driver compatible with the installed TensorRT tools
 - TensorRT `trtexec` available on `PATH` for engine builds
 - `ffmpeg` available on `PATH` or via `imageio-ffmpeg`

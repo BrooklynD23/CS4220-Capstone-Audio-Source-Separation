@@ -14,13 +14,21 @@ pip install -e .[dev]
 
 # Install mic-capture support (optional, needs PortAudio)
 pip install -e .[mic]
+
+# Full GPU stack (includes PyAudio for scripts/ui/live_demo.py)
+pip install -e .[gpu]
+
+# Interactive demo (`python launch.py`): bootstraps `.venv`, installs dev + CUDA PyTorch wheels (Windows/Linux, **PyTorch index only—no PyPI torch**) + `[gpu_launcher]` (no PyAudio). Set `LAUNCH_PYTORCH_CUDA_INDEX`, optional `LAUNCH_PYTORCH_CUDA_FALLBACK_INDEX` (e.g. cu126), or `LAUNCH_SKIP_CUDA_TORCH=1` for CPU-only.
 ```
 
-The project uses `setuptools` (not poetry). Python `>=3.10,<3.13` is required.
+The project uses `setuptools` (not poetry). Python `>=3.10,<3.15` is required (see `pyproject.toml`).
 
 ## Key Commands
 
 ```bash
+# Interactive launcher: TUI + optional CPU vs GPU compare UI
+python launch.py
+
 # Run all tests
 pytest
 
@@ -48,6 +56,14 @@ bash scripts/export/build_trt_engine.sh \
 # Compare UI demo server
 python scripts/ui/serve_compare_demo.py
 ```
+
+### CPU vs GPU compare (`launch.py`)
+
+- Dashboard **Z (Both)** runs full separation on **CPU** then **GPU**, writes per-run dirs under `artifacts/live/<label>-<utc>/cpu/` and `.../gpu/`, and opens the compare UI with those JSON paths.
+- **Y (GPU)** and **Z** require `torch.cuda.is_available()` in `.venv` (NVIDIA driver + CUDA PyTorch wheel). If GPU options are greyed out, the dashboard shows a **grey probe line** (`torch=… build_cuda=… cuda.is_available()=…`) after setup.
+- The launcher installs CUDA **torch** / **torchaudio** from the PyTorch wheel index (default **cu124**). Override with **`LAUNCH_PYTORCH_CUDA_INDEX`**, optional **`LAUNCH_PYTORCH_CUDA_FALLBACK_INDEX`**, or set **`LAUNCH_SKIP_CUDA_TORCH=1`** for CPU-only (disables GPU compare).
+- Manual check from repo root: `.venv/Scripts/python.exe -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"` (Windows) or `.venv/bin/python` on Unix.
+- Place **`artifacts/models/umx-live.pt`** so **Full** mode is available for a real UMX comparison (see `scripts/models/bootstrap_umx_live_checkpoint.py`).
 
 ## Architecture
 
