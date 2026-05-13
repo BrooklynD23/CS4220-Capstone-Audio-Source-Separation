@@ -31,6 +31,8 @@ coverage/
 htmlcov/
 .cache/
 tmp/
+.pytest_tmp/
+
 .claude/
 claude-progress.txt
 init.sh

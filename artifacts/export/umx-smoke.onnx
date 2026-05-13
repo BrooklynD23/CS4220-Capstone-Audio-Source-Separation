@@ -1,2 +1,0 @@
-# dry-run ONNX placeholder for reproducibility checks
-# input_shape=(1, 2, 44100), opset=17
