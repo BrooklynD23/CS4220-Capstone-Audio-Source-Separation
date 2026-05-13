@@ -76,6 +76,29 @@ Optional extras:
 
 Place weights for launcher **Full** gating / comparisons at `artifacts/models/umx-live.pt` if needed (`scripts/models/bootstrap_umx_live_checkpoint.py` documents how pretrained `umxhq` relates to this path).
 
+### Interactive launcher (`launch.py`)
+
+After install, start the **Audio Source Separation Demo** TUI from the repo root (with `.venv` activated):
+
+```bash
+python launch.py
+```
+
+The launcher can bootstrap or reuse `.venv`, install GPU launcher extras when needed, run live separation, and open the compare UI with the right `?artifact=` URLs.
+
+![Interactive launcher: source, input path, smoke/full mode, CPU/GPU/Both, Run / Quit](docs/images/launch-tui.png)
+
+| Keys | Action |
+|------|--------|
+| **1 / 2 / 3** | Source: **MP3**, **Video**, or **Mic** |
+| **F / L** | Pick **file** or **list** a fixture under `fixtures/` |
+| **A / B** | **Smoke** (fast pipeline check; not full four-stem separation) or **Full** (**Open-Unmix `umxhq`**, four stems — needs weights / GPU stack as configured) |
+| **X / Y / Z** | **CPU**, **GPU**, or **Both** (compare — **Y/Z** need CUDA PyTorch; see dashboard probe line if greyed out) |
+| **R** | **Run** — writes under `artifacts/live/…` and opens the browser when configured |
+| **Q** | **Quit** |
+
+Use **B (Full)** when you want real separated stems; **A (Smoke)** is for contract timing without running full `umxhq`. **Z (Both)** runs CPU then GPU into sibling output dirs and opens a dual-artifact compare when available.
+
 ---
 
 ## High-level system architecture
